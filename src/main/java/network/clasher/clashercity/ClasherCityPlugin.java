@@ -1126,41 +1126,74 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         List<Plot> plots;
         try { plots = getTournamentPlots(); }
         catch (SQLException ex) { player.sendMessage(msg("Could not load entries.")); return; }
-        MenuHolder holder = new MenuHolder("VOTE", 0);
+        List<Plot> eligible = plots.stream()
+                .filter(p -> !p.ownerUuid().equals(player.getUniqueId().toString()))
+                .toList();
+        int perPage = 28;
+        int maxPage = Math.max(0, (eligible.size() - 1) / perPage);
+        int page = 0;
+        MenuHolder holder = new MenuHolder("VOTE", page);
         Inventory inv = holder.create(54, color("&8✦  CHAMPIONSHIP  &8•  &6PLAYER VOTING"));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
         boolean alreadyVoted = hasVoted(player);
         inv.setItem(4, menuItem(alreadyVoted ? Material.LIME_DYE : Material.GOLD_INGOT,
                 alreadyVoted ? "&a&lVOTE SUBMITTED" : "&6&lCOMMUNITY VOTING",
-                List.of("&8" + tournamentName(), "", "&7Eligible entries: &f" + plots.size(),
+                List.of("&8" + tournamentName(), "", "&7Eligible entries: &f" + eligible.size(),
                         "&7Your status: " + (alreadyVoted ? "&aVote recorded" : "&eNot voted"),
                         "", alreadyVoted ? "&aThank you for participating." : "&7Choose one build below."), "none", null));
         int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
-        int slot = 0;
-        for (Plot p : plots) {
-            if (slot >= slots.length) break;
-            if (p.ownerUuid().equals(player.getUniqueId().toString())) continue;
-            inv.setItem(slots[slot++], menuItem(alreadyVoted ? Material.GRAY_DYE : Material.PAPER,
+        int start = page * perPage;
+        for (int i = 0; i < slots.length && start + i < eligible.size(); i++) {
+            Plot p = eligible.get(start + i);
+            inv.setItem(slots[i], menuItem(alreadyVoted ? Material.GRAY_DYE : Material.PAPER,
                     (alreadyVoted ? "&7" : "&e&l") + p.id() + " &8• &f" + p.ownerName(),
                     List.of("&8CHAMPIONSHIP ENTRY", "", "&7Builder: &f" + p.ownerName(),
                             "&7Plot: &f" + p.id(), "",
                             alreadyVoted ? "&cYou have already voted." : "&aClick to submit your vote.",
                             "&8One vote per player."), alreadyVoted ? "none" : "vote", p.id()));
         }
-        if (slot == 0) inv.setItem(22, menuItem(Material.BARRIER, "&cNo eligible entries", List.of("&7Other players must register owned plots."), "none", null));
+        if (eligible.isEmpty()) inv.setItem(22, menuItem(Material.BARRIER, "&cNo eligible entries", List.of("&7Other players must register owned plots."), "none", null));
+        if (page > 0) inv.setItem(48, menuItem(Material.ARROW, "&fPrevious page", List.of("&7Page " + page), "vote_prev", null));
         inv.setItem(49, menuItem(Material.BARRIER, "&cClose", List.of("&7Close voting menu."), "close", null));
+        if (page < maxPage) inv.setItem(52, menuItem(Material.ARROW, "&fNext page", List.of("&7Page " + (page + 2)), "vote_next", null));
         player.openInventory(inv);
     }
 
-    private boolean hasVoted(Player player) {
-        try (PreparedStatement ps = db.prepareStatement("SELECT 1 FROM votes WHERE tournament_id=? AND voter_uuid=? LIMIT 1")) {
-            ps.setString(1, tournamentId());
-            ps.setString(2, player.getUniqueId().toString());
-            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
-        } catch (SQLException ex) {
-            getLogger().warning("Could not check voting status: " + ex.getMessage());
-            return true;
+    private void openVoteMenu(Player player, int requestedPage) {
+        if (phase() != Phase.VOTING) { player.sendMessage(msg("Voting is not open right now.")); return; }
+        if (!isEligibleVoter(player)) { player.sendMessage(msg("You do not meet the minimum playtime requirement.")); return; }
+        List<Plot> plots;
+        try { plots = getTournamentPlots(); }
+        catch (SQLException ex) { player.sendMessage(msg("Could not load entries.")); return; }
+        List<Plot> eligible = plots.stream().filter(p -> !p.ownerUuid().equals(player.getUniqueId().toString())).toList();
+        int perPage = 28;
+        int maxPage = Math.max(0, (eligible.size() - 1) / perPage);
+        int page = Math.max(0, Math.min(requestedPage, maxPage));
+        MenuHolder holder = new MenuHolder("VOTE", page);
+        Inventory inv = holder.create(54, color("&8✦  CHAMPIONSHIP  &8•  &6VOTING  " + (page + 1) + "/" + (maxPage + 1)));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
+        boolean alreadyVoted = hasVoted(player);
+        inv.setItem(4, menuItem(alreadyVoted ? Material.LIME_DYE : Material.GOLD_INGOT,
+                alreadyVoted ? "&a&lVOTE SUBMITTED" : "&6&lCOMMUNITY VOTING",
+                List.of("&8" + tournamentName(), "", "&7Eligible entries: &f" + eligible.size(),
+                        "&7Your status: " + (alreadyVoted ? "&aVote recorded" : "&eNot voted"),
+                        "", alreadyVoted ? "&aThank you for participating." : "&7Choose one build below."), "none", null));
+        int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
+        int start = page * perPage;
+        for (int i = 0; i < slots.length && start + i < eligible.size(); i++) {
+            Plot p = eligible.get(start + i);
+            inv.setItem(slots[i], menuItem(alreadyVoted ? Material.GRAY_DYE : Material.PAPER,
+                    (alreadyVoted ? "&7" : "&e&l") + p.id() + " &8• &f" + p.ownerName(),
+                    List.of("&8CHAMPIONSHIP ENTRY", "", "&7Builder: &f" + p.ownerName(),
+                            "&7Plot: &f" + p.id(), "",
+                            alreadyVoted ? "&cYou have already voted." : "&aClick to submit your vote.",
+                            "&8One vote per player."), alreadyVoted ? "none" : "vote", p.id()));
         }
+        if (eligible.isEmpty()) inv.setItem(22, menuItem(Material.BARRIER, "&cNo eligible entries", List.of("&7Other players must register owned plots."), "none", null));
+        if (page > 0) inv.setItem(48, menuItem(Material.ARROW, "&fPrevious page", List.of("&7Page " + page), "vote_prev", null));
+        inv.setItem(49, menuItem(Material.BARRIER, "&cClose", List.of("&7Close voting menu."), "close", null));
+        if (page < maxPage) inv.setItem(52, menuItem(Material.ARROW, "&fNext page", List.of("&7Page " + (page + 2)), "vote_next", null));
+        player.openInventory(inv);
     }
 
     private void castVote(Player player, String plotId) {
