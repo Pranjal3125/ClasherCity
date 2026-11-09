@@ -545,6 +545,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity undo <operation-id> confirm"); break; }
                     undoWorldgen(sender,args[1]);
                 }
+                case "planningcentre" -> {
+                    if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity planningcentre <preview|create>"); break; }
+                    if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity planningcentre <preview|create>"); break; }
+                    buildPlanningCentre(p,args[1].equalsIgnoreCase("create"));
+                }
                 case "plotboard" -> {
                     if(!(sender instanceof Player p) || args.length<3) { sender.sendMessage("Usage: /clcity plotboard <plot-id> <preview|create>"); break; }
                     if(!args[2].equalsIgnoreCase("preview") && !args[2].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity plotboard <plot-id> <preview|create>"); break; }
@@ -616,6 +621,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity undo <operation-id> confirm &7- Safely undo plugin-generated blocks"));
         sender.sendMessage(color("&e/clcity ceremony <preview|start> &7- Build podium and announce top 3"));
         sender.sendMessage(color("&e/clcity plotboard <id> <preview|create> &7- Place a live plot information board"));
+        sender.sendMessage(color("&e/clcity planningcentre <preview|create> &7- Build the modern city planning centre"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
@@ -830,6 +836,49 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         }
         if (create) { persistWorldgenOperation(operationId,player,"ROAD",changes); player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped. Undo ID: &e"+operationId)); }
         else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
+    }
+
+    private void buildPlanningCentre(Player player,boolean create) {
+        if(cityWorld==null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("Stand in the city world to build the planning centre.");
+        int cx=player.getLocation().getBlockX(), cz=player.getLocation().getBlockZ();
+        int baseY=cityWorld.getHighestBlockYAt(cx,cz)+1;
+        int minX=cx-8,maxX=cx+8,minZ=cz-7,maxZ=cz+7;
+        int eligible=0,skipped=0;
+        String operationId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
+        for(int x=minX;x<=maxX;x++) for(int z=minZ;z<=maxZ;z++){
+            org.bukkit.block.Block floor=cityWorld.getBlockAt(x,baseY,z);
+            if(floor.getType().isAir()||floor.isPassable()){
+                eligible++;
+                if(create) placeGeneratedBlock(changes,floor,Material.POLISHED_DEEPSLATE);
+            } else skipped++;
+            for(int dy=1;dy<=8;dy++){
+                boolean perimeter=x==minX||x==maxX||z==minZ||z==maxZ;
+                if(!perimeter) continue;
+                if(z==maxZ && x>=cx-1 && x<=cx+1 && dy<=3) continue;
+                org.bukkit.block.Block wall=cityWorld.getBlockAt(x,baseY+dy,z);
+                if(wall.getType().isAir()||wall.isPassable()){
+                    Material material;
+                    if(z==minZ) material=Material.SMOOTH_STONE;
+                    else if(dy==8) material=Material.TINTED_GLASS;
+                    else if(x==minX||x==maxX) material=Material.LIGHT_BLUE_STAINED_GLASS;
+                    else material=Material.SMOOTH_STONE;
+                    if(create) placeGeneratedBlock(changes,wall,material);
+                    eligible++;
+                } else skipped++;
+            }
+        }
+        for(int x=minX+1;x<maxX;x+=4) for(int z=minZ+1;z<maxZ;z+=4){
+            org.bukkit.block.Block light=cityWorld.getBlockAt(x,baseY+7,z);
+            if(light.getType().isAir()||light.isPassable()) if(create) placeGeneratedBlock(changes,light,Material.SEA_LANTERN);
+        }
+        if(!create){ player.sendMessage(msg("Planning Centre preview: &f"+eligible+"&a clear placement points; &c"+skipped+"&a occupied blocks will be skipped. Footprint 17x15, height 8.")); return; }
+        persistWorldgenOperation(operationId,player,"PLANNING_CENTRE",changes);
+        getConfig().set("map-wall.world",cityWorld.getName());
+        getConfig().set("map-wall.x",cx+1); getConfig().set("map-wall.y",baseY+2); getConfig().set("map-wall.z",minZ+1);
+        getConfig().set("map-wall.facing",BlockFace.SOUTH.name()); saveConfig();
+        createMapWall(player,true);
+        player.sendMessage(msg("Modern City Planning Centre generated. Operation undo ID: &e"+operationId+"&a. The 4x4 map wall was placed on the rear wall."));
     }
 
     private void buildPlotBoard(Player player,String plotId,boolean create) throws SQLException {
