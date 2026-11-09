@@ -170,6 +170,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS reward_queue (tournament_id TEXT NOT NULL, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, rank INTEGER NOT NULL, plot_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT, PRIMARY KEY(tournament_id, player_uuid, rank))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_visit_settings (player_uuid TEXT PRIMARY KEY, visits_enabled INTEGER NOT NULL DEFAULT 1)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS construction_progress (plot_id TEXT PRIMARY KEY, milestone TEXT NOT NULL DEFAULT 'FOUNDATION', percent INTEGER NOT NULL DEFAULT 0, deadline TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_gallery (id INTEGER PRIMARY KEY AUTOINCREMENT, plot_id TEXT NOT NULL, owner_uuid TEXT NOT NULL, owner_name TEXT NOT NULL, image_url TEXT NOT NULL, caption TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
         }
     }
 
@@ -414,6 +415,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 if (args.length < 4) player.sendMessage(msg("Usage: /plot progress <plot-id> <foundation|structure|exterior|interior|detailing|completed> <0-100> [YYYY-MM-DD]"));
                 else updateConstructionProgress(player, args);
             }
+            case "gallery" -> {
+                if (args.length < 2) player.sendMessage(msg("Usage: /plot gallery <plot-id> [image-url] [caption]"));
+                else if (args.length == 2) showPlotGallery(player, args[1]);
+                else submitPlotScreenshot(player, args);
+            }
             case "info" -> {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot info <plot-id>"));
                 else showPlotInfo(player, args[1]);
@@ -422,7 +428,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot abandon <plot-id>"));
                 else abandonPlot(player, args[1]);
             }
-            default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|visit|visits|progress|info|abandon> [arguments]"));
+            default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|visit|visits|progress|gallery|info|abandon> [arguments]"));
         }
         return true;
     }
@@ -1063,6 +1069,46 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             player.sendMessage(color("&6Plot &e" + p.id() + " &7| &6Size: &f" + (p.maxX() - p.minX() + 1) + "x" + (p.maxZ() - p.minZ() + 1)
                     + " &7| &6Price: &e" + economy.format(p.price()) + " &7| &6Owner: &f" + owner));
         } catch (SQLException ex) { player.sendMessage(msg("Database error.")); }
+    }
+
+    private void submitPlotScreenshot(Player player, String[] args) {
+        try {
+            Plot plot=getPlot(args[1]);
+            if(plot==null || plot.ownerUuid()==null || (!plot.ownerUuid().equals(player.getUniqueId().toString()) && !player.hasPermission("clashercity.admin"))) {
+                player.sendMessage(msg("Only the plot owner or an admin can add gallery screenshots.")); return;
+            }
+            java.net.URI uri=java.net.URI.create(args[2]);
+            if(!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost()==null || args[2].length()>1000) {
+                player.sendMessage(msg("Screenshot URL must be a valid HTTPS image link.")); return;
+            }
+            String caption=args.length>3?String.join(" ",Arrays.copyOfRange(args,3,args.length)):"";
+            if(caption.length()>120) caption=caption.substring(0,120);
+            try(PreparedStatement ps=db.prepareStatement("INSERT INTO plot_gallery(plot_id,owner_uuid,owner_name,image_url,caption) VALUES(?,?,?,?,?)")){
+                ps.setString(1,plot.id()); ps.setString(2,player.getUniqueId().toString()); ps.setString(3,player.getName()); ps.setString(4,uri.toString()); ps.setString(5,caption); ps.executeUpdate();
+            }
+            player.sendMessage(msg("Screenshot link added to gallery for plot &e"+plot.id()+"&a."));
+        } catch(IllegalArgumentException ex){ player.sendMessage(msg("Invalid screenshot URL. Use a direct HTTPS image link.")); }
+        catch(SQLException ex){ player.sendMessage(msg("Could not save screenshot to gallery.")); }
+    }
+
+    private void showPlotGallery(Player player, String plotId) {
+        try {
+            Plot plot=getPlot(plotId);
+            if(plot==null){ player.sendMessage(msg("Plot not found.")); return; }
+            player.sendMessage(color("&6---- Gallery: "+plot.id()+" ----"));
+            try(PreparedStatement ps=db.prepareStatement("SELECT owner_name,image_url,caption,created_at FROM plot_gallery WHERE plot_id=? ORDER BY id DESC LIMIT 10")){
+                ps.setString(1,plot.id());
+                try(ResultSet rs=ps.executeQuery()){
+                    int count=0;
+                    while(rs.next()){
+                        count++;
+                        player.sendMessage(color("&e"+count+". &f"+rs.getString("caption")+" &7by "+rs.getString("owner_name")+" &8("+rs.getString("created_at")+")"));
+                        player.sendMessage(color("&b"+rs.getString("image_url")));
+                    }
+                    if(count==0) player.sendMessage(msg("No screenshots submitted yet."));
+                }
+            }
+        } catch(SQLException ex){ player.sendMessage(msg("Could not load plot gallery.")); }
     }
 
     private void updateConstructionProgress(Player player, String[] args) {
