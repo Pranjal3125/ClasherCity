@@ -1128,7 +1128,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         List<Plot> plots;
         try { plots = getTournamentPlots(); }
         catch (SQLException ex) { player.sendMessage(msg("Could not load entries.")); return; }
-        List<Plot> eligible = plots.stream().filter(p -> !p.ownerUuid().equals(player.getUniqueId().toString())).toList();
+        List<Plot> eligible = plots.stream().filter(p -> p.ownerUuid() != null && !p.ownerUuid().equals(player.getUniqueId().toString())).toList();
         int perPage = 28;
         int maxPage = Math.max(0, (eligible.size() - 1) / perPage);
         int page = Math.max(0, Math.min(requestedPage, maxPage));
@@ -1566,6 +1566,71 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             g.setColor(Color.RED); g.drawString("MAP DATA ERROR", 8, 64);
         } finally { g.dispose(); }
         return image;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onMenuClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (!(event.getView().getTopInventory().getHolder() instanceof MenuHolder holder)) return;
+        event.setCancelled(true);
+        if (event.getClickedInventory() == null || event.getClickedInventory() != event.getView().getTopInventory()) return;
+        ItemStack clicked = event.getCurrentItem();
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        String action = clicked.getItemMeta().getPersistentDataContainer().get(keyAction, PersistentDataType.STRING);
+        String plotId = clicked.getItemMeta().getPersistentDataContainer().get(keyPlot, PersistentDataType.STRING);
+        if (action == null || action.equals("none")) return;
+        try {
+            switch (action) {
+                case "close" -> player.closeInventory();
+                case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
+                case "plots" -> openPlotMenu(player, 0);
+                case "map" -> openMapMenu(player, 0);
+                case "home" -> { player.closeInventory(); teleportHome(player, null); }
+                case "vote" -> {
+                    if (holder.type.equals("MAIN")) openVoteMenu(player);
+                    else if (plotId != null) openVoteConfirm(player, plotId);
+                }
+                case "top" -> { player.closeInventory(); showResults(player); }
+                case "plot_info" -> { if (plotId != null) openPlotInfoMenu(player, plotId); }
+                case "confirm" -> { if (plotId != null) openPurchaseConfirm(player, plotId); }
+                case "buy" -> { if (plotId != null) purchasePlot(player, plotId); }
+                case "cancel" -> openPlotMenu(player, 0);
+                case "enter" -> { if (plotId != null) { player.closeInventory(); enterPlot(player, plotId); } }
+                case "map_prev" -> openMapMenu(player, holder.page - 1);
+                case "map_next" -> openMapMenu(player, holder.page + 1);
+                case "plot_prev" -> openPlotMenu(player, holder.page - 1);
+                case "plot_next" -> openPlotMenu(player, holder.page + 1);
+                case "vote_prev" -> openVoteMenu(player, holder.page - 1);
+                case "vote_next" -> openVoteMenu(player, holder.page + 1);
+                case "vote_submit" -> { if (plotId != null) castVote(player, plotId); }
+                case "vote_back" -> openVoteMenu(player, 0);
+                case "admin_create" -> { if (player.hasPermission("clashercity.admin")) { player.closeInventory(); if (cityWorld == null) loadCityWorld(); ensureGlobalRegion(cityWorld); player.sendMessage(msg("City world is ready.")); } }
+                case "admin_wand" -> {
+                    if (!player.hasPermission("clashercity.admin")) break;
+                    ItemStack wand = new ItemStack(Material.BLAZE_ROD);
+                    ItemMeta meta = wand.getItemMeta();
+                    meta.setDisplayName(color("&6ClasherCity Selection Wand"));
+                    meta.getPersistentDataContainer().set(keyWand, PersistentDataType.BYTE, (byte) 1);
+                    wand.setItemMeta(meta);
+                    player.getInventory().addItem(wand);
+                    player.sendMessage(msg("Selection wand given. Left-click and right-click two corners."));
+                }
+                case "admin_map" -> { if (player.hasPermission("clashercity.admin")) givePhysicalMap(player); }
+                case "admin_start" -> { if (player.hasPermission("clashercity.admin")) startTournament(player, "ClasherCity Building Championship"); }
+                case "admin_building" -> { if (player.hasPermission("clashercity.admin")) { setPhase(Phase.BUILDING); broadcast(msg("Building phase is now open.")); openAdminMenu(player); } }
+                case "admin_voting" -> { if (player.hasPermission("clashercity.admin")) { setPhase(Phase.VOTING); broadcast(msg("Voting is now open. Use &e/buildvote&a.")); openAdminMenu(player); } }
+                case "admin_results" -> { if (player.hasPermission("clashercity.admin")) { player.closeInventory(); showResults(player); } }
+                default -> { }
+            }
+        } catch (Exception ex) {
+            getLogger().warning("Menu action '" + action + "' failed for " + player.getName() + ": " + ex.getMessage());
+            player.sendMessage(msg("That menu action failed. Please contact staff."));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onMenuDrag(InventoryDragEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof MenuHolder) event.setCancelled(true);
     }
 
     // ------------------------------- Events -------------------------------
