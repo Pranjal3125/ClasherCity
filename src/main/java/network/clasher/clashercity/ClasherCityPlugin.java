@@ -1061,11 +1061,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     }
 
     private void undoWorldgen(CommandSender sender,String id) throws SQLException {
-        try(PreparedStatement check=db.prepareStatement("SELECT status FROM worldgen_operations WHERE id=?")){
+        String operationKind;
+        try(PreparedStatement check=db.prepareStatement("SELECT status,kind FROM worldgen_operations WHERE id=?")){
             check.setString(1,id);
             try(ResultSet rs=check.executeQuery()){
                 if(!rs.next()){ sender.sendMessage(msg("Unknown worldgen operation ID.")); return; }
                 if(!rs.getString("status").equals("ACTIVE")){ sender.sendMessage(msg("This operation has already been undone or closed.")); return; }
+                operationKind=rs.getString("kind");
             }
         }
         int restored=0,skipped=0;
@@ -1084,6 +1086,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             }
         }
         try(PreparedStatement ps=db.prepareStatement("UPDATE worldgen_operations SET status='UNDONE' WHERE id=?")){ ps.setString(1,id); ps.executeUpdate(); }
+        if(operationKind.equals("PLANNING_CENTRE")){
+            World w=Bukkit.getWorld(getConfig().getString("map-wall.world",""));
+            if(w!=null) for(org.bukkit.entity.Entity entity:w.getEntities()) if(entity instanceof org.bukkit.entity.ItemFrame && entity.getScoreboardTags().contains("clashercity_mapwall")) entity.remove();
+            getConfig().set("map-wall.world",null); saveConfig();
+        }
         sender.sendMessage(msg("Undo complete for &e"+id+"&a: restored &f"+restored+"&a blocks; &c"+skipped+"&a skipped because they changed or their world is unloaded."));
     }
 
