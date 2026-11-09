@@ -979,40 +979,47 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
 
     private void openAdminMenu(Player player) {
         MenuHolder holder = new MenuHolder("ADMIN", 0);
-        Inventory inv = holder.create(27, color("&8✦  CLASHERCITY  &8•  &cADMIN CONTROL"));
-        frameMenu(inv, Material.GRAY_STAINED_GLASS_PANE);
-        inv.setItem(10, menuItem(Material.GRASS_BLOCK, "&aLoad/create city world", List.of("&7/clcity create"), "admin_create", null));
-        inv.setItem(11, menuItem(Material.BLAZE_ROD, "&eSelection wand", List.of("&7/clcity wand"), "admin_wand", null));
-        inv.setItem(12, menuItem(Material.MAP, "&bGive physical map", List.of("&7/clcity mapitem"), "admin_map", null));
-        inv.setItem(14, menuItem(Material.EMERALD, "&aStart tournament", List.of("&7Opens plot registration"), "admin_start", null));
-        inv.setItem(15, menuItem(Material.CLOCK, "&eSet BUILDING phase", List.of("&7Allows plot owners to build"), "admin_building", null));
-        inv.setItem(16, menuItem(Material.BOOK, "&dOpen voting", List.of("&7/buildvote"), "admin_voting", null));
-        inv.setItem(22, menuItem(Material.GOLD_BLOCK, "&6Show results", List.of("&7/buildtop"), "admin_results", null));
+        Inventory inv = holder.create(36, color("&8✦  CLASHERCITY  &8•  &cADMIN CONSOLE"));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
+        inv.setItem(4, menuItem(Material.NETHER_STAR, "&b&lCITY OPERATIONS", List.of("&8ADMINISTRATION", "", "&7World: &f" + (cityWorld == null ? "Not loaded" : cityWorld.getName()), "&7Tournament: &f" + tournamentName(), "&7Phase: &e" + phase(), "", "&8Select an operation below."), "none", null));
+        inv.setItem(10, menuItem(Material.GRASS_BLOCK, "&a&lWORLD MANAGEMENT", List.of("&7Load or create the city world.", "", "&e➜ Click to execute &8• &f/clcity create"), "admin_create", null));
+        inv.setItem(12, menuItem(Material.BLAZE_ROD, "&b&lSELECTION TOOL", List.of("&7Receive the region selection wand.", "", "&e➜ Click to receive"), "admin_wand", null));
+        inv.setItem(14, menuItem(Material.FILLED_MAP, "&3&lMAP MANAGEMENT", List.of("&7Give yourself the physical city map.", "", "&e➜ Click to receive"), "admin_map", null));
+        inv.setItem(16, menuItem(Material.GOLD_INGOT, "&6&lTOURNAMENT SETUP", List.of("&7Open plot registration for a new event.", "&7Current phase: &f" + phase(), "", "&e➜ Start championship"), "admin_start", null));
+        inv.setItem(20, menuItem(Material.BRICKS, "&e&lBUILDING PHASE", List.of("&7Allow plot owners to build.", "", "&e➜ Set phase to BUILDING"), "admin_building", null));
+        inv.setItem(22, menuItem(Material.WRITABLE_BOOK, "&d&lVOTING CONTROL", List.of("&7Open player voting for registered plots.", "", "&e➜ Set phase to VOTING"), "admin_voting", null));
+        inv.setItem(24, menuItem(Material.GOLD_BLOCK, "&6&lFINAL LEADERBOARD", List.of("&7Review current tournament scores.", "", "&e➜ View results"), "admin_results", null));
+        inv.setItem(31, menuItem(Material.BARRIER, "&cClose console", List.of("&7Return to the game."), "close", null));
         player.openInventory(inv);
     }
 
     private void openPlotMenu(Player player, int page) {
         List<Plot> plots;
         try { plots = getPlots(); } catch (SQLException ex) { player.sendMessage(msg("Could not load plots.")); return; }
-        int maxPage = Math.max(0, (plots.size() - 1) / 45);
+        int perPage = 28;
+        int maxPage = Math.max(0, (plots.size() - 1) / perPage);
         page = Math.max(0, Math.min(page, maxPage));
         MenuHolder holder = new MenuHolder("PLOTS", page);
         Inventory inv = holder.create(54, color("&8✦  CITY MARKETPLACE  &8•  &7" + (page + 1) + "/" + (maxPage + 1)));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
-        int start = page * 45;
-        for (int i = 0; i < 45 && start + i < plots.size(); i++) {
+        inv.setItem(4, menuItem(Material.EMERALD, "&a&lPROPERTY MARKETPLACE", List.of("&8CLASHERCITY REAL ESTATE", "", "&7Registered properties: &f" + plots.size(), "&7Available: &a" + plots.stream().filter(p -> p.ownerUuid() == null).count(), "&7Purchased: &c" + plots.stream().filter(p -> p.ownerUuid() != null).count(), "", "&8Select a property to inspect details."), "none", null));
+        int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
+        int start = page * perPage;
+        for (int i = 0; i < slots.length && start + i < plots.size(); i++) {
             Plot p = plots.get(start + i);
             boolean sold = p.ownerUuid() != null;
-            inv.setItem(i, menuItem(sold ? Material.RED_CONCRETE : Material.LIME_CONCRETE,
-                    (sold ? "&c" : "&a") + p.id(),
-                    List.of("&7Size: &f" + (p.maxX() - p.minX() + 1) + " x " + (p.maxZ() - p.minZ() + 1),
+            inv.setItem(slots[i], menuItem(sold ? Material.RED_STAINED_GLASS_PANE : Material.LIME_STAINED_GLASS_PANE,
+                    (sold ? "&c&l" : "&a&l") + p.id(),
+                    List.of("&8PROPERTY LISTING", "", "&7Dimensions: &f" + (p.maxX()-p.minX()+1) + " x " + (p.maxZ()-p.minZ()+1),
                             "&7Price: &e" + economy.format(p.price()),
-                            sold ? "&7Owner: &f" + p.ownerName() : "&aAvailable",
-                            "&eClick for details"), "plot_info", p.id()));
+                            sold ? "&7Status: &cPurchased" : "&7Status: &aAvailable",
+                            sold ? "&7Owner: &f" + p.ownerName() : "&7Owner: &fUnclaimed", "",
+                            sold ? "&e➜ View property details" : "&a➜ View / purchase options"), "plot_info", p.id()));
         }
-        if (page > 0) inv.setItem(45, menuItem(Material.ARROW, "&ePrevious page", List.of(), "prev", null));
-        inv.setItem(49, menuItem(Material.MAP, "&bCity map", List.of(), "map", null));
-        if (page < maxPage) inv.setItem(53, menuItem(Material.ARROW, "&eNext page", List.of(), "next", null));
+        if (page > 0) inv.setItem(48, menuItem(Material.ARROW, "&fPrevious page", List.of("&7Page " + page), "prev", null));
+        inv.setItem(49, menuItem(Material.FILLED_MAP, "&bCity atlas", List.of("&7Browse the city overview."), "map", null));
+        inv.setItem(50, menuItem(Material.BARRIER, "&cClose", List.of("&7Close marketplace."), "close", null));
+        if (page < maxPage) inv.setItem(52, menuItem(Material.ARROW, "&fNext page", List.of("&7Page " + (page + 2)), "next", null));
         player.openInventory(inv);
     }
 
@@ -1063,65 +1070,40 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         try { plots = getTournamentPlots(); }
         catch (SQLException ex) { player.sendMessage(msg("Could not load entries.")); return; }
         MenuHolder holder = new MenuHolder("VOTE", 0);
-        Inventory inv = holder.create(54, color("&8✦  BUILD CHAMPIONSHIP  &8•  &6VOTING"));
+        Inventory inv = holder.create(54, color("&8✦  CHAMPIONSHIP  &8•  &6PLAYER VOTING"));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
+        boolean alreadyVoted = hasVoted(player);
+        inv.setItem(4, menuItem(alreadyVoted ? Material.LIME_DYE : Material.GOLD_INGOT,
+                alreadyVoted ? "&a&lVOTE SUBMITTED" : "&6&lCOMMUNITY VOTING",
+                List.of("&8" + tournamentName(), "", "&7Eligible entries: &f" + plots.size(),
+                        "&7Your status: " + (alreadyVoted ? "&aVote recorded" : "&eNot voted"),
+                        "", alreadyVoted ? "&aThank you for participating." : "&7Choose one build below."), "none", null));
+        int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
         int slot = 0;
         for (Plot p : plots) {
-            if (slot >= 45) break;
+            if (slot >= slots.length) break;
             if (p.ownerUuid().equals(player.getUniqueId().toString())) continue;
-            inv.setItem(slot++, menuItem(Material.PAPER, "&e" + p.id() + " &7- &f" + p.ownerName(),
-                    List.of("&7Vote for this build", "&cYou cannot vote for your own plot", "&eClick to cast vote"), "vote", p.id()));
+            inv.setItem(slots[slot++], menuItem(alreadyVoted ? Material.GRAY_DYE : Material.PAPER,
+                    (alreadyVoted ? "&7" : "&e&l") + p.id() + " &8• &f" + p.ownerName(),
+                    List.of("&8CHAMPIONSHIP ENTRY", "", "&7Builder: &f" + p.ownerName(),
+                            "&7Plot: &f" + p.id(), "",
+                            alreadyVoted ? "&cYou have already voted." : "&aClick to submit your vote.",
+                            "&8One vote per player."), alreadyVoted ? "none" : "vote", p.id()));
         }
-        if (slot == 0) inv.setItem(22, menuItem(Material.BARRIER, "&cNo eligible entries", List.of("&7Other players must own plots"), "none", null));
+        if (slot == 0) inv.setItem(22, menuItem(Material.BARRIER, "&cNo eligible entries", List.of("&7Other players must register owned plots."), "none", null));
+        inv.setItem(49, menuItem(Material.BARRIER, "&cClose", List.of("&7Close voting menu."), "close", null));
         player.openInventory(inv);
     }
 
-    private void handleMenuClick(Player player, MenuHolder holder, ItemStack item) {
-        if (item == null || !item.hasItemMeta()) return;
-        String action = item.getItemMeta().getPersistentDataContainer().get(keyAction, PersistentDataType.STRING);
-        String plotId = item.getItemMeta().getPersistentDataContainer().get(keyPlot, PersistentDataType.STRING);
-        if (action == null) return;
-        switch (action) {
-            case "plots" -> openPlotMenu(player, 0);
-            case "map" -> openMapMenu(player, 0);
-            case "home" -> { player.closeInventory(); teleportHome(player, null); }
-            case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
-            case "vote" -> { if (holder.type.equals("VOTE")) castVote(player, plotId); else openVoteMenu(player); }
-            case "top" -> { player.closeInventory(); showResults(player); }
-            case "prev" -> openPlotMenu(player, holder.page - 1);
-            case "next" -> openPlotMenu(player, holder.page + 1);
-            case "plot_info" -> openPlotInfoMenu(player, plotId);
-            case "confirm" -> openPurchaseConfirm(player, plotId);
-            case "enter" -> { player.closeInventory(); enterPlot(player, plotId); }
-            case "buy" -> { player.closeInventory(); purchasePlot(player, plotId); }
-            case "cancel" -> openPlotMenu(player, 0);
-            case "info", "none" -> { }
-            case "admin_create" -> { player.closeInventory(); adminCommand(player, new String[]{"create"}); }
-            case "admin_wand" -> { player.closeInventory(); adminCommand(player, new String[]{"wand"}); }
-            case "admin_map" -> { player.closeInventory(); adminCommand(player, new String[]{"mapitem"}); }
-            case "admin_start" -> { player.closeInventory(); try { startTournament(player, "ClasherCity Building Championship"); } catch (SQLException ex) { player.sendMessage(msg("Could not start tournament.")); getLogger().severe("Could not start tournament: " + ex.getMessage()); } }
-            case "admin_building" -> { player.closeInventory(); try { setPhase(Phase.BUILDING); broadcast(msg("Building phase has started.")); } catch (SQLException ex) { player.sendMessage(msg("Could not change phase.")); } }
-            case "admin_voting" -> { player.closeInventory(); try { setPhase(Phase.VOTING); broadcast(msg("Voting is now open. Use /buildvote.")); } catch (SQLException ex) { player.sendMessage(msg("Could not change phase.")); } }
-            case "admin_results" -> { player.closeInventory(); showResults(player); }
+    private boolean hasVoted(Player player) {
+        try (PreparedStatement ps = db.prepareStatement("SELECT 1 FROM votes WHERE tournament_id=? AND voter_uuid=? LIMIT 1")) {
+            ps.setString(1, tournamentId());
+            ps.setString(2, player.getUniqueId().toString());
+            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
+        } catch (SQLException ex) {
+            getLogger().warning("Could not check voting status: " + ex.getMessage());
+            return true;
         }
-    }
-
-    @EventHandler
-    public void onInventoryClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player player)) return;
-        if (!(event.getView().getTopInventory().getHolder() instanceof MenuHolder holder)) return;
-        event.setCancelled(true);
-        if (event.getClickedInventory() == null || event.getClickedInventory() != event.getView().getTopInventory()) return;
-        long now = System.currentTimeMillis();
-        long previous = lastGuiAction.getOrDefault(player.getUniqueId(), 0L);
-        if (now - previous < 150) return;
-        lastGuiAction.put(player.getUniqueId(), now);
-        handleMenuClick(player, holder, event.getCurrentItem());
-    }
-
-    @EventHandler
-    public void onInventoryDrag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof MenuHolder) event.setCancelled(true);
     }
 
     private void castVote(Player player, String plotId) {
