@@ -544,6 +544,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity undo <operation-id> confirm"); break; }
                     undoWorldgen(sender,args[1]);
                 }
+                case "ceremony" -> {
+                    if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity ceremony <preview|start>"); break; }
+                    if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("start")) { sender.sendMessage("Usage: /clcity ceremony <preview|start>"); break; }
+                    runWinnerCeremony(p,args[1].equalsIgnoreCase("start"));
+                }
                 case "mapwall" -> {
                     if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity mapwall <select|preview|create|update|remove>"); break; }
                     String action=args[1].toLowerCase(Locale.ROOT);
@@ -603,6 +608,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity mapitem &7- Give physical map"));
         sender.sendMessage(color("&e/clcity mapwall <select|preview|create|update|remove> &7- Manage 4x4 city map wall"));
         sender.sendMessage(color("&e/clcity undo <operation-id> confirm &7- Safely undo plugin-generated blocks"));
+        sender.sendMessage(color("&e/clcity ceremony <preview|start> &7- Build podium and announce top 3"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
@@ -817,6 +823,51 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         }
         if (create) { persistWorldgenOperation(operationId,player,"ROAD",changes); player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped. Undo ID: &e"+operationId)); }
         else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
+    }
+
+    private void runWinnerCeremony(Player admin,boolean start) throws SQLException {
+        if(cityWorld==null || !isCityWorld(admin.getWorld())) throw new IllegalArgumentException("Stand in the city world to place the winner podium.");
+        List<ResultRow> results=calculateResults();
+        if(results.isEmpty()) throw new IllegalArgumentException("No tournament results are available yet.");
+        Location origin=admin.getLocation();
+        int baseX=origin.getBlockX(), baseZ=origin.getBlockZ();
+        String operationId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
+        Material[] podiumMaterials={Material.GOLD_BLOCK,Material.IRON_BLOCK,Material.COPPER_BLOCK};
+        int[] offsets={-3,0,3};
+        int[] heights={3,2,1};
+        int eligible=0,skipped=0;
+        for(int rank=0;rank<Math.min(3,results.size());rank++){
+            int x=baseX+offsets[rank], z=baseZ;
+            int ground=cityWorld.getHighestBlockYAt(x,z);
+            boolean clear=true;
+            for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++) for(int dy=1;dy<=heights[rank];dy++)
+                if(!cityWorld.getBlockAt(x+dx,ground+dy,z+dz).isPassable()) clear=false;
+            if(!clear){ skipped++; continue; }
+            eligible++;
+            if(start){
+                for(int dx=-1;dx<=1;dx++) for(int dz=-1;dz<=1;dz++){
+                    for(int dy=1;dy<=heights[rank];dy++){
+                        Material m=(dx==0&&dz==0&&dy==heights[rank])?podiumMaterials[rank]:Material.STONE_BRICKS;
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+dx,ground+dy,z+dz),m);
+                    }
+                }
+                Location fireworkLoc=new Location(cityWorld,x+0.5,ground+heights[rank]+3,z+0.5);
+                org.bukkit.entity.Firework firework=cityWorld.spawn(fireworkLoc,org.bukkit.entity.Firework.class);
+                org.bukkit.inventory.meta.FireworkMeta meta=firework.getFireworkMeta();
+                meta.addEffect(org.bukkit.FireworkEffect.builder().with(org.bukkit.FireworkEffect.Type.BALL_LARGE).withColor(java.awt.Color.ORANGE,java.awt.Color.AQUA).trail(true).flicker(true).build());
+                meta.setPower(1); firework.setFireworkMeta(meta);
+            }
+        }
+        if(!start){ admin.sendMessage(msg("Winner podium preview: &f"+eligible+"&a of top 3 positions are clear; &c"+skipped+"&a are obstructed.")); return; }
+        persistWorldgenOperation(operationId,admin,"WINNER_PODIUM",changes);
+        broadcast(color("&6&l✦ CLASHERCITY CHAMPIONS ✦"));
+        for(int i=0;i<Math.min(3,results.size());i++){
+            ResultRow row=results.get(i);
+            broadcast(color((i==0?"&6&l1ST":"&f"+(i+1)+"ND")+" &e"+row.ownerName()+" &7— Plot &f"+row.plotId()+" &8| &b"+String.format(Locale.US,"%.1f",row.finalScore())));
+        }
+        for(Player online:Bukkit.getOnlinePlayers()) online.sendTitle(color("&6&lCLASHERCITY"),color("&eThe champions have been crowned!"),10,80,20);
+        admin.sendMessage(msg("Winner ceremony launched. Undo podium blocks with &e/clcity undo "+operationId+" confirm"));
     }
 
     private void placeGeneratedBlock(List<String[]> changes, org.bukkit.block.Block block, Material material) {
