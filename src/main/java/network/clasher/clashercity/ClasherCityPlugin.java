@@ -512,6 +512,20 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (args.length < 3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity deleteplot <id> confirm"); break; }
                     deletePlot(args[1]); sender.sendMessage(msg("Plot deleted: " + args[1]));
                 }
+                case "setlocation" -> {
+                    if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity setlocation <id>"); break; }
+                    validateId(args[1]);
+                    Location l=p.getLocation();
+                    String path="destinations."+args[1].toLowerCase(Locale.ROOT);
+                    getConfig().set(path+".world",l.getWorld().getName()); getConfig().set(path+".x",l.getX()); getConfig().set(path+".y",l.getY()); getConfig().set(path+".z",l.getZ());
+                    getConfig().set(path+".yaw",l.getYaw()); getConfig().set(path+".pitch",l.getPitch()); saveConfig();
+                    p.sendMessage(msg("City destination saved: &e"+args[1]));
+                }
+                case "removelocation" -> {
+                    if(args.length<2){ sender.sendMessage("Usage: /clcity removelocation <id>"); break; }
+                    getConfig().set("destinations."+args[1].toLowerCase(Locale.ROOT),null); saveConfig();
+                    sender.sendMessage(msg("City destination removed: "+args[1]));
+                }
                 case "setspawn" -> {
                     if (!(sender instanceof Player p) || !isCityWorld(p.getWorld())) { sender.sendMessage("Stand inside the city world and run /clcity setspawn."); break; }
                     Location l = p.getLocation();
@@ -578,6 +592,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity setprice <id> <price> &7- Change plot price"));
         sender.sendMessage(color("&e/clcity deleteplot <id> confirm &7- Delete an unowned plot"));
         sender.sendMessage(color("&e/clcity setspawn &7- Save city spawn"));
+        sender.sendMessage(color("&e/clcity setlocation <id> &7- Register a teleport destination"));
+        sender.sendMessage(color("&e/clcity removelocation <id> &7- Remove a destination"));
         sender.sendMessage(color("&e/clcity mapitem &7- Give physical map"));
         sender.sendMessage(color("&e/clcity mapwall <select|preview|create|update|remove> &7- Manage 4x4 city map wall"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
@@ -1274,10 +1290,52 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         inv.setItem(11, menuItem(Material.COMPASS, "&b&lCITY SPAWN", List.of("&8DESTINATION", "", "&7Teleport to the city hub.", "&7Explore the ClasherCity district.", "", "&e➜ Click to travel"), "visit", null));
         inv.setItem(13, menuItem(Material.LIME_CONCRETE, "&a&lPLOT MARKETPLACE", List.of("&8REAL ESTATE", "", "&7Browse plots and their prices.", "&7Purchase your own city property.", "", "&e➜ Browse properties"), "plots", null));
         inv.setItem(15, menuItem(Material.FILLED_MAP, "&3&lCITY ATLAS", List.of("&8CITY OVERVIEW", "", "&7View the city layout.", "&7Check available and sold plots.", "", "&e➜ Open atlas"), "map", null));
+        inv.setItem(17, menuItem(Material.RECOVERY_COMPASS, "&d&lCITY DESTINATIONS", List.of("&8TELEPORT DIRECTORY", "", "&7Browse registered districts,", "&7parks and public landmarks.", "", "&e➜ Choose destination"), "destinations", null));
         inv.setItem(20, menuItem(Material.OAK_DOOR, "&e&lMY PROPERTY", List.of("&8PERSONAL SHORTCUT", "", "&7Teleport to your owned plot.", "", "&e➜ Go to my plot"), "home", null));
         inv.setItem(22, menuItem(Material.WRITABLE_BOOK, "&d&lCHAMPIONSHIP", List.of("&8BUILDING TOURNAMENT", "", "&7Current phase: &f" + phase(), "&7Open tournament voting.", "", "&e➜ View tournament"), "vote", null));
         inv.setItem(24, menuItem(Material.GOLD_INGOT, "&6&lHALL OF FAME", List.of("&8LEADERBOARD", "", "&7See the current top builders.", "&7Check tournament standings.", "", "&e➜ View rankings"), "top", null));
         player.openInventory(inv);
+    }
+
+    private void openDestinationsMenu(Player player) {
+        MenuHolder holder=new MenuHolder("DESTINATIONS",0);
+        Inventory inv=holder.create(54,color("&8✦  CITY DESTINATIONS  &8•  &7TRAVEL"));
+        frameMenu(inv,Material.BLACK_STAINED_GLASS_PANE);
+        inv.setItem(4,menuItem(Material.RECOVERY_COMPASS,"&d&lCITY DIRECTORY",List.of("&7Registered teleport points","&7and public city spaces."),"none",null));
+        inv.setItem(10,menuItem(Material.COMPASS,"&b&lCITY SPAWN",List.of("&7Return to the main city hub.","","&e➜ Teleport"),"destination","spawn"));
+        int[] slots={11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
+        int index=0;
+        try {
+            for(Area area:getAreas()) if(area.type().equalsIgnoreCase("PUBLIC") && index<slots.length) {
+                inv.setItem(slots[index++],menuItem(Material.OAK_LEAVES,"&a&l"+area.id(),List.of("&8PUBLIC AREA / PARK","&7Teleport to the centre","&7of this registered public area.","","&e➜ Visit location"),"destination","area:"+area.id()));
+            }
+        } catch(SQLException ex){ player.sendMessage(msg("Could not load public destinations.")); }
+        if(getConfig().isConfigurationSection("destinations")) {
+            var section=getConfig().getConfigurationSection("destinations");
+            for(String id:section.getKeys(false)) if(index<slots.length) {
+                inv.setItem(slots[index++],menuItem(Material.LODESTONE,"&d&l"+id,List.of("&8CITY LANDMARK","&7Registered destination.","","&e➜ Teleport"),"destination","loc:"+id));
+            }
+        }
+        inv.setItem(49,menuItem(Material.BARRIER,"&cClose",List.of("&7Close directory."),"close",null));
+        player.openInventory(inv);
+    }
+
+    private void teleportDestination(Player player,String target) {
+        try {
+            if(target.equalsIgnoreCase("spawn")){ player.closeInventory(); teleportCitySpawn(player); return; }
+            Location destination=null;
+            if(target.startsWith("area:")){
+                String id=target.substring(5);
+                Area area=getAreas().stream().filter(a->a.id().equalsIgnoreCase(id)&&a.type().equalsIgnoreCase("PUBLIC")).findFirst().orElse(null);
+                if(area!=null){ int x=(area.minX()+area.maxX())/2, z=(area.minZ()+area.maxZ())/2; destination=new Location(cityWorld,x+0.5,cityWorld.getHighestBlockYAt(x,z)+1,z+0.5); }
+            } else if(target.startsWith("loc:")){
+                String id=target.substring(4), path="destinations."+id;
+                World w=Bukkit.getWorld(getConfig().getString(path+".world",""));
+                if(w!=null) destination=new Location(w,getConfig().getDouble(path+".x"),getConfig().getDouble(path+".y"),getConfig().getDouble(path+".z"),(float)getConfig().getDouble(path+".yaw"),(float)getConfig().getDouble(path+".pitch"));
+            }
+            if(destination==null){ player.sendMessage(msg("Destination is unavailable or was removed.")); return; }
+            player.closeInventory(); player.teleport(destination); player.sendMessage(msg("Teleported to &e"+target.replace("area:","").replace("loc:","")+"&a."));
+        } catch(SQLException ex){ player.sendMessage(msg("Could not load destination.")); }
     }
 
     private void openAdminMenu(Player player) {
@@ -1959,6 +2017,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
                 case "plots" -> openPlotMenu(player, 0);
                 case "map" -> openMapMenu(player, 0);
+                case "destinations" -> openDestinationsMenu(player);
+                case "destination" -> { if(plotId!=null) teleportDestination(player,plotId); }
                 case "home" -> { player.closeInventory(); teleportHome(player, null); }
                 case "vote" -> {
                     if (holder.type.equals("MAIN")) openVoteMenu(player);
