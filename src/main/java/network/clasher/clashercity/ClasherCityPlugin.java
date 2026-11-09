@@ -666,7 +666,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         boolean alongX = (area.maxX() - area.minX()) >= (area.maxZ() - area.minZ());
         int length = alongX ? area.maxX() - area.minX() + 1 : area.maxZ() - area.minZ() + 1;
         int width = alongX ? area.maxZ() - area.minZ() + 1 : area.maxX() - area.minX() + 1;
-        if (width < 5) throw new IllegalArgumentException("Road selection must be at least 5 blocks wide to fit asphalt and sidewalks.");
+        if (width < 7) throw new IllegalArgumentException("Road selection must be at least 7 blocks wide to fit asphalt, lane markings and sidewalks.");
         int sidewalkWidth = Math.max(1, Math.min(2, getConfig().getInt("road-builder.sidewalk-width", 2)));
         int lampSpacing = Math.max(6, getConfig().getInt("road-builder.streetlight-spacing", 12));
         int center = width / 2;
@@ -693,7 +693,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 for (int side : new int[]{sidewalkWidth - 1, width - sidewalkWidth}) {
                     int x = alongX ? area.minX() + along : area.minX() + side;
                     int z = alongX ? area.minZ() + side : area.minZ() + along;
-                    int baseY = cityWorld.getHighestBlockYAt(x, z) + 2;
+                    int baseY = cityWorld.getHighestBlockYAt(x, z) + 1;
                     boolean clear = true;
                     for (int dy = 0; dy < 4; dy++) if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
                     lampCandidates++;
