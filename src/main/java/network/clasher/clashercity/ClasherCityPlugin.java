@@ -2223,7 +2223,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         MapTileRenderer(int tileX,int tileY){ super(false); this.tileX=tileX; this.tileY=tileY; }
         @Override public void render(MapView view,MapCanvas canvas,Player player){
             if(cached==null || System.currentTimeMillis()-lastBuild>5000){
-                BufferedImage full=buildMapImage();
+                BufferedImage full=mapRenderer.currentImage();
                 cached=new BufferedImage(128,128,BufferedImage.TYPE_INT_RGB);
                 Graphics2D g=cached.createGraphics();
                 try { g.drawImage(full,0,0,128,128,tileX*32,tileY*32,(tileX+1)*32,(tileY+1)*32,null); }
@@ -2239,14 +2239,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         private long lastBuild;
         MapViewRenderer() { super(false); }
         void invalidate() { cached = null; lastBuild = 0; }
-        @Override
-        public void render(MapView view, MapCanvas canvas, Player player) {
-            if (cached == null || System.currentTimeMillis() - lastBuild > 5000) {
-                cached = buildMapImage();
-                lastBuild = System.currentTimeMillis();
-            }
-            canvas.drawImage(0, 0, cached);
+        BufferedImage currentImage() {
+            if(cached==null || System.currentTimeMillis()-lastBuild>5000){ cached=buildMapImage(); lastBuild=System.currentTimeMillis(); }
+            return cached;
         }
+        @Override public void render(MapView view,MapCanvas canvas,Player player){ canvas.drawImage(0,0,currentImage()); }
     }
 
     private BufferedImage buildMapImage() {
