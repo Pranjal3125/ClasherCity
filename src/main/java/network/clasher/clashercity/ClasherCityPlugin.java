@@ -1159,6 +1159,28 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         player.openInventory(inv);
     }
 
+    private void openVoteConfirm(Player player, String plotId) {
+        try {
+            Plot plot = getPlot(plotId);
+            if (plot == null || plot.ownerUuid() == null) { player.sendMessage(msg("This entry is unavailable.")); return; }
+            if (plot.ownerUuid().equals(player.getUniqueId().toString())) { player.sendMessage(msg("You cannot vote for your own plot.")); return; }
+            if (hasVoted(player)) { player.sendMessage(msg("You have already voted in this tournament.")); return; }
+            MenuHolder holder = new MenuHolder("VOTE_CONFIRM", 0);
+            Inventory inv = holder.create(27, color("&8✦  CONFIRM CHAMPIONSHIP VOTE"));
+            frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
+            inv.setItem(13, menuItem(Material.PAPER, "&6&lCONFIRM YOUR VOTE",
+                    List.of("&8FINAL SELECTION", "", "&7Tournament: &f" + tournamentName(),
+                            "&7Plot: &e" + plot.id(), "&7Builder: &f" + plot.ownerName(),
+                            "", "&cYour vote cannot be changed after submission.",
+                            "&7Please verify your selection."), "info", plotId));
+            inv.setItem(11, menuItem(Material.LIME_DYE, "&a&lSUBMIT VOTE",
+                    List.of("&7Submit one vote for " + plot.id() + "."), "vote_submit", plotId));
+            inv.setItem(15, menuItem(Material.RED_DYE, "&c&lGO BACK",
+                    List.of("&7Return to the voting list."), "vote_back", null));
+            player.openInventory(inv);
+        } catch (SQLException ex) { player.sendMessage(msg("Could not prepare vote confirmation.")); }
+    }
+
     private void castVote(Player player, String plotId) {
         if (phase() != Phase.VOTING) { player.sendMessage(msg("Voting is closed.")); return; }
         if (!isEligibleVoter(player)) { player.sendMessage(msg("You do not meet the minimum playtime requirement.")); return; }
