@@ -1,5 +1,5 @@
 name: ClasherCity
-version: '1.0.0'
+version: '1.1.0'
 main: network.clasher.clashercity.ClasherCityPlugin
 api-version: '26.2'
 author: Clasher Network
