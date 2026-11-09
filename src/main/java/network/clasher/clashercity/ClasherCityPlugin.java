@@ -175,6 +175,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_gallery (id INTEGER PRIMARY KEY AUTOINCREMENT, plot_id TEXT NOT NULL, owner_uuid TEXT NOT NULL, owner_name TEXT NOT NULL, image_url TEXT NOT NULL, caption TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_operations (id TEXT PRIMARY KEY, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_changes (operation_id TEXT NOT NULL, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL, old_data TEXT NOT NULL, new_data TEXT NOT NULL, restored INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(operation_id,world,x,y,z))");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_boards (plot_id TEXT PRIMARY KEY, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL)");
         }
     }
 
@@ -544,6 +545,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity undo <operation-id> confirm"); break; }
                     undoWorldgen(sender,args[1]);
                 }
+                case "plotboard" -> {
+                    if(!(sender instanceof Player p) || args.length<3) { sender.sendMessage("Usage: /clcity plotboard <plot-id> <preview|create>"); break; }
+                    if(!args[2].equalsIgnoreCase("preview") && !args[2].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity plotboard <plot-id> <preview|create>"); break; }
+                    buildPlotBoard(p,args[1],args[2].equalsIgnoreCase("create"));
+                }
                 case "ceremony" -> {
                     if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity ceremony <preview|start>"); break; }
                     if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("start")) { sender.sendMessage("Usage: /clcity ceremony <preview|start>"); break; }
@@ -609,6 +615,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity mapwall <select|preview|create|update|remove> &7- Manage 4x4 city map wall"));
         sender.sendMessage(color("&e/clcity undo <operation-id> confirm &7- Safely undo plugin-generated blocks"));
         sender.sendMessage(color("&e/clcity ceremony <preview|start> &7- Build podium and announce top 3"));
+        sender.sendMessage(color("&e/clcity plotboard <id> <preview|create> &7- Place a live plot information board"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
@@ -823,6 +830,55 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         }
         if (create) { persistWorldgenOperation(operationId,player,"ROAD",changes); player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped. Undo ID: &e"+operationId)); }
         else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
+    }
+
+    private void buildPlotBoard(Player player,String plotId,boolean create) throws SQLException {
+        if(cityWorld==null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
+        Plot plot=getPlot(plotId);
+        if(plot==null) throw new IllegalArgumentException("Plot not found.");
+        int x=(plot.minX()+plot.maxX())/2, z=plot.maxZ()+1, y=cityWorld.getHighestBlockYAt(x,z)+1;
+        org.bukkit.block.Block block=cityWorld.getBlockAt(x,y,z);
+        if(!block.getType().isAir() && !block.isPassable()) throw new IllegalArgumentException("Plot board position is occupied. Clear the centre of the front edge first.");
+        if(!create){ player.sendMessage(msg("Plot board preview for &e"+plotId+"&a: sign at &f"+x+","+y+","+z+"&a. It will show price, availability, owner and tournament entry status.")); return; }
+        String opId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
+        placeGeneratedBlock(changes,block,Material.OAK_SIGN);
+        if(block.getState() instanceof org.bukkit.block.Sign sign){
+            sign.setLine(0,color("&b&lCLASHERCITY"));
+            sign.setLine(1,color("&f"+plot.id()));
+            sign.setLine(2,color(plot.ownerUuid()==null?"&aAVAILABLE":"&cSOLD"));
+            sign.setLine(3,color("&e"+economy.format(plot.price())));
+            sign.update(true,false);
+        }
+        try(PreparedStatement ps=db.prepareStatement("INSERT INTO plot_boards(plot_id,world,x,y,z) VALUES(?,?,?,?,?) ON CONFLICT(plot_id) DO UPDATE SET world=excluded.world,x=excluded.x,y=excluded.y,z=excluded.z")){
+            ps.setString(1,plot.id()); ps.setString(2,cityWorld.getName()); ps.setInt(3,x); ps.setInt(4,y); ps.setInt(5,z); ps.executeUpdate();
+        }
+        persistWorldgenOperation(opId,player,"PLOT_BOARD",changes);
+        refreshPlotBoard(plot.id());
+        player.sendMessage(msg("Live plot board placed for &e"+plotId+"&a. Undo ID: &e"+opId));
+    }
+
+    private void refreshPlotBoard(String plotId) {
+        try(PreparedStatement ps=db.prepareStatement("SELECT world,x,y,z FROM plot_boards WHERE plot_id=?")){
+            ps.setString(1,plotId);
+            try(ResultSet rs=ps.executeQuery()){
+                if(!rs.next()) return;
+                World w=Bukkit.getWorld(rs.getString("world")); if(w==null) return;
+                org.bukkit.block.Block block=w.getBlockAt(rs.getInt("x"),rs.getInt("y"),rs.getInt("z"));
+                if(!(block.getState() instanceof org.bukkit.block.Sign sign)) return;
+                Plot plot=getPlot(plotId); if(plot==null) return;
+                boolean entered=false;
+                try(PreparedStatement entry=db.prepareStatement("SELECT 1 FROM tournament_entries WHERE tournament_id=? AND plot_id=?")){
+                    entry.setString(1,getMeta("tournament_id")); entry.setString(2,plotId);
+                    try(ResultSet e=entry.executeQuery()){ entered=e.next(); }
+                }
+                sign.setLine(0,color("&b&lCLASHERCITY"));
+                sign.setLine(1,color("&f"+plot.id()));
+                sign.setLine(2,color(plot.ownerUuid()==null?"&aAVAILABLE":"&cSOLD"));
+                sign.setLine(3,color("&e"+economy.format(plot.price())+(entered?" &d★":"")));
+                sign.update(true,false);
+            }
+        } catch(Exception ex){ getLogger().warning("Could not refresh plot board "+plotId+": "+ex.getMessage()); }
     }
 
     private void runWinnerCeremony(Player admin,boolean start) throws SQLException {
