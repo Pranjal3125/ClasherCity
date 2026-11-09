@@ -954,9 +954,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         return item;
     }
 
+    private void frameMenu(Inventory inv, Material material) {
+        ItemStack pane = menuItem(material, "&8 ", List.of(), "none", null);
+        int rows = inv.getSize() / 9;
+        for (int col = 0; col < 9; col++) { inv.setItem(col, pane); inv.setItem((rows - 1) * 9 + col, pane); }
+        for (int row = 1; row < rows - 1; row++) { inv.setItem(row * 9, pane); inv.setItem(row * 9 + 8, pane); }
+    }
+
     private void openMainMenu(Player player) {
         MenuHolder holder = new MenuHolder("MAIN", 0);
-        Inventory inv = holder.create(27, color("&8ClasherCity | Main Menu"));
+        Inventory inv = holder.create(27, color("&8✦  CLASHERCITY  &8•  &7CITY PORTAL"));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
         inv.setItem(8, menuItem(Material.COMPASS, "&bVisit city", List.of("&7Teleport to the ClasherCity spawn"), "visit", null));
         inv.setItem(10, menuItem(Material.LIME_CONCRETE, "&aPlot marketplace", List.of("&7Browse available city plots", "&eClick to open"), "plots", null));
         inv.setItem(12, menuItem(Material.FILLED_MAP, "&bCity map", List.of("&7View plot availability"), "map", null));
@@ -968,7 +976,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
 
     private void openAdminMenu(Player player) {
         MenuHolder holder = new MenuHolder("ADMIN", 0);
-        Inventory inv = holder.create(27, color("&8ClasherCity | Admin"));
+        Inventory inv = holder.create(27, color("&8✦  CLASHERCITY  &8•  &cADMIN CONTROL"));
+        frameMenu(inv, Material.GRAY_STAINED_GLASS_PANE);
         inv.setItem(10, menuItem(Material.GRASS_BLOCK, "&aLoad/create city world", List.of("&7/clcity create"), "admin_create", null));
         inv.setItem(11, menuItem(Material.BLAZE_ROD, "&eSelection wand", List.of("&7/clcity wand"), "admin_wand", null));
         inv.setItem(12, menuItem(Material.MAP, "&bGive physical map", List.of("&7/clcity mapitem"), "admin_map", null));
@@ -985,7 +994,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         int maxPage = Math.max(0, (plots.size() - 1) / 45);
         page = Math.max(0, Math.min(page, maxPage));
         MenuHolder holder = new MenuHolder("PLOTS", page);
-        Inventory inv = holder.create(54, color("&8ClasherCity | Plots " + (page + 1) + "/" + (maxPage + 1)));
+        Inventory inv = holder.create(54, color("&8✦  CITY MARKETPLACE  &8•  &7" + (page + 1) + "/" + (maxPage + 1)));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
         int start = page * 45;
         for (int i = 0; i < 45 && start + i < plots.size(); i++) {
             Plot p = plots.get(start + i);
@@ -1008,7 +1018,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             Plot p = getPlot(id);
             if (p == null) { player.sendMessage(msg("Plot not found.")); return; }
             MenuHolder holder = new MenuHolder("PLOT_INFO", 0);
-            Inventory inv = holder.create(27, color("&8Plot " + p.id()));
+            Inventory inv = holder.create(27, color("&8✦  PROPERTY DETAILS  &8•  &f" + p.id()));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
             boolean sold = p.ownerUuid() != null;
             inv.setItem(13, menuItem(sold ? Material.RED_CONCRETE : Material.LIME_CONCRETE,
                     (sold ? "&c" : "&a") + p.id(),
@@ -1029,7 +1040,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         List<Plot> plots;
         try { plots = getPlots(); } catch (SQLException ex) { player.sendMessage(msg("Could not load map.")); return; }
         MenuHolder holder = new MenuHolder("MAP", page);
-        Inventory inv = holder.create(54, color("&8ClasherCity | City Map"));
+        Inventory inv = holder.create(54, color("&8✦  CLASHERCITY  &8•  &3CITY ATLAS"));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
         inv.setItem(4, menuItem(Material.FILLED_MAP, "&bCity overview", List.of("&7Green = available", "&7Red = purchased", "&7Grey = roads", "&7Blue = public area"), "none", null));
         for (int i = 0; i < Math.min(45, plots.size()); i++) {
             Plot p = plots.get(i);
@@ -1048,7 +1060,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         try { plots = getTournamentPlots(); }
         catch (SQLException ex) { player.sendMessage(msg("Could not load entries.")); return; }
         MenuHolder holder = new MenuHolder("VOTE", 0);
-        Inventory inv = holder.create(54, color("&8ClasherCity | Vote"));
+        Inventory inv = holder.create(54, color("&8✦  BUILD CHAMPIONSHIP  &8•  &6VOTING"));
+        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
         int slot = 0;
         for (Plot p : plots) {
             if (slot >= 45) break;
