@@ -169,6 +169,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS scores (tournament_id TEXT NOT NULL, judge_uuid TEXT NOT NULL, plot_id TEXT NOT NULL, category TEXT NOT NULL, score INTEGER NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tournament_id, judge_uuid, plot_id, category))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS reward_queue (tournament_id TEXT NOT NULL, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, rank INTEGER NOT NULL, plot_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT, PRIMARY KEY(tournament_id, player_uuid, rank))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_visit_settings (player_uuid TEXT PRIMARY KEY, visits_enabled INTEGER NOT NULL DEFAULT 1)");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS construction_progress (plot_id TEXT PRIMARY KEY, milestone TEXT NOT NULL DEFAULT 'FOUNDATION', percent INTEGER NOT NULL DEFAULT 0, deadline TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)");
         }
     }
 
@@ -408,6 +409,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             case "visits" -> {
                 if (args.length < 2 || (!args[1].equalsIgnoreCase("on") && !args[1].equalsIgnoreCase("off"))) player.sendMessage(msg("Usage: /plot visits <on|off>"));
                 else setPlotVisits(player, args[1].equalsIgnoreCase("on"));
+            }
+            case "progress" -> {
+                if (args.length < 4) player.sendMessage(msg("Usage: /plot progress <plot-id> <foundation|structure|exterior|interior|detailing|completed> <0-100> [YYYY-MM-DD]"));
+                else updateConstructionProgress(player, args);
             }
             case "info" -> {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot info <plot-id>"));
@@ -1018,6 +1023,44 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         } catch (SQLException ex) { player.sendMessage(msg("Database error.")); }
     }
 
+    private void updateConstructionProgress(Player player, String[] args) {
+        try {
+            Plot plot = getPlot(args[1]);
+            if (plot == null || plot.ownerUuid() == null) { player.sendMessage(msg("Plot not found or unowned.")); return; }
+            if (!player.hasPermission("clashercity.admin") && !plot.ownerUuid().equals(player.getUniqueId().toString())) {
+                player.sendMessage(msg("Only the plot owner or an admin can update construction progress.")); return;
+            }
+            String milestone = args[2].toUpperCase(Locale.ROOT);
+            Set<String> allowed = Set.of("FOUNDATION", "STRUCTURE", "EXTERIOR", "INTERIOR", "DETAILING", "COMPLETED");
+            if (!allowed.contains(milestone)) { player.sendMessage(msg("Invalid milestone. Use foundation, structure, exterior, interior, detailing or completed.")); return; }
+            int percent = Integer.parseInt(args[3]);
+            if (percent < 0 || percent > 100) { player.sendMessage(msg("Progress must be between 0 and 100.")); return; }
+            if (milestone.equals("COMPLETED")) percent = 100;
+            String deadline = null;
+            if (args.length >= 5) deadline = java.time.LocalDate.parse(args[4]).toString();
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO construction_progress(plot_id,milestone,percent,deadline,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(plot_id) DO UPDATE SET milestone=excluded.milestone,percent=excluded.percent,deadline=COALESCE(excluded.deadline,construction_progress.deadline),updated_at=CURRENT_TIMESTAMP")) {
+                ps.setString(1, plot.id()); ps.setString(2, milestone); ps.setInt(3, percent); ps.setString(4, deadline); ps.executeUpdate();
+            }
+            player.sendMessage(msg("Construction progress for &e" + plot.id() + "&a updated: &f" + milestone + " &7• &e" + percent + "%."));
+        } catch (NumberFormatException ex) {
+            player.sendMessage(msg("Progress must be a number from 0 to 100."));
+        } catch (java.time.format.DateTimeParseException ex) {
+            player.sendMessage(msg("Deadline must use YYYY-MM-DD."));
+        } catch (SQLException ex) { player.sendMessage(msg("Could not update construction progress.")); }
+    }
+
+    private String constructionProgressLine(String plotId) {
+        try (PreparedStatement ps = db.prepareStatement("SELECT milestone,percent,deadline FROM construction_progress WHERE plot_id=?")) {
+            ps.setString(1, plotId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return "&7Construction: &fNot reported";
+                String deadline = rs.getString("deadline");
+                return "&7Construction: &e" + rs.getString("milestone") + " &7• &f" + rs.getInt("percent") + "%"
+                        + (deadline == null ? "" : " &7• Due &f" + deadline);
+            }
+        } catch (SQLException ex) { return "&7Construction: &cUnavailable"; }
+    }
+
     private boolean plotVisitsEnabled(UUID uuid) throws SQLException {
         try (PreparedStatement ps = db.prepareStatement("SELECT visits_enabled FROM plot_visit_settings WHERE player_uuid=?")) {
             ps.setString(1, uuid.toString());
@@ -1200,6 +1243,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                             "&7Footprint: &f" + sizeX + " x " + sizeZ + " blocks",
                             "&7Total area: &f" + ((long) sizeX * sizeZ) + " blocks²",
                             "&7World: &f" + p.world(),
+                            constructionProgressLine(p.id()),
                             "&7Minimum corner: &f" + p.minX() + ", " + p.minZ(),
                             "&7Maximum corner: &f" + p.maxX() + ", " + p.maxZ()),
                     "info", p.id()));
