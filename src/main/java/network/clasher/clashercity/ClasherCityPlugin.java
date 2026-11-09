@@ -173,6 +173,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_visit_settings (player_uuid TEXT PRIMARY KEY, visits_enabled INTEGER NOT NULL DEFAULT 1)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS construction_progress (plot_id TEXT PRIMARY KEY, milestone TEXT NOT NULL DEFAULT 'FOUNDATION', percent INTEGER NOT NULL DEFAULT 0, deadline TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_gallery (id INTEGER PRIMARY KEY AUTOINCREMENT, plot_id TEXT NOT NULL, owner_uuid TEXT NOT NULL, owner_name TEXT NOT NULL, image_url TEXT NOT NULL, caption TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_operations (id TEXT PRIMARY KEY, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_changes (operation_id TEXT NOT NULL, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL, old_data TEXT NOT NULL, new_data TEXT NOT NULL, restored INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(operation_id,world,x,y,z))");
         }
     }
 
@@ -538,6 +540,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (!(sender instanceof Player p)) { sender.sendMessage("Players only."); break; }
                     givePhysicalMap(p);
                 }
+                case "undo" -> {
+                    if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity undo <operation-id> confirm"); break; }
+                    undoWorldgen(sender,args[1]);
+                }
                 case "mapwall" -> {
                     if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity mapwall <select|preview|create|update|remove>"); break; }
                     String action=args[1].toLowerCase(Locale.ROOT);
@@ -596,6 +602,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity removelocation <id> &7- Remove a destination"));
         sender.sendMessage(color("&e/clcity mapitem &7- Give physical map"));
         sender.sendMessage(color("&e/clcity mapwall <select|preview|create|update|remove> &7- Manage 4x4 city map wall"));
+        sender.sendMessage(color("&e/clcity undo <operation-id> confirm &7- Safely undo plugin-generated blocks"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
@@ -687,6 +694,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         int entranceStart = (plot.minX() + plot.maxX() - entranceWidth + 1) / 2;
         int entranceEnd = entranceStart + entranceWidth - 1;
         int eligible = 0, skipped = 0, changed = 0;
+        String operationId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
         for (int x = plot.minX(); x <= plot.maxX(); x++) {
             for (int z = plot.minZ(); z <= plot.maxZ(); z++) {
                 boolean edge = x == plot.minX() || x == plot.maxX() || z == plot.minZ() || z == plot.maxZ();
@@ -702,7 +711,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (block.getType() == Material.AIR || block.isPassable()) eligible++;
                     else skipped++;
                     if (create && (block.getType() == Material.AIR || block.isPassable())) {
-                        block.setType(material, false);
+                        placeGeneratedBlock(changes,block,material);
                         changed++;
                     }
                 }
@@ -711,7 +720,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         if (!create) {
             player.sendMessage(msg("Border preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks can be placed, &c" + skipped + " &awill be skipped. Entrance: &f" + entranceWidth + " blocks."));
         } else {
-            player.sendMessage(msg("Border built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks."));
+            persistWorldgenOperation(operationId,player,"PLOT_BORDER",changes);
+            player.sendMessage(msg("Border built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks. Undo ID: &e"+operationId));
         }
     }
 
@@ -725,13 +735,15 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         int minX=area.minX(), maxX=area.maxX(), minZ=area.minZ(), maxZ=area.maxZ();
         int midX=(minX+maxX)/2, midZ=(minZ+maxZ)/2;
         int changed=0, skipped=0, eligible=0;
+        String operationId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
         for(int x=minX;x<=maxX;x++) for(int z=minZ;z<=maxZ;z++) {
             boolean path = Math.abs(x-midX)<=1 || Math.abs(z-midZ)<=1;
             int y=cityWorld.getHighestBlockYAt(x,z)+1;
             var block=cityWorld.getBlockAt(x,y,z);
             if(block.getType()!=Material.AIR && !block.isPassable()){ skipped++; continue; }
             eligible++;
-            if(create){ block.setType(path ? Material.POLISHED_ANDESITE : Material.GRASS_BLOCK,false); changed++; }
+            if(create){ placeGeneratedBlock(changes,block,path ? Material.POLISHED_ANDESITE : Material.GRASS_BLOCK); changed++; }
         }
         int lampCount=0;
         int[][] corners={{minX+2,minZ+2},{minX+2,maxZ-2},{maxX-2,minZ+2},{maxX-2,maxZ-2}};
@@ -741,13 +753,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             boolean clear=true;
             for(int dy=0;dy<4;dy++) if(!cityWorld.getBlockAt(pos[0],y+dy,pos[1]).isPassable()) clear=false;
             if(create&&clear){
-                cityWorld.getBlockAt(pos[0],y,pos[1]).setType(Material.OAK_FENCE,false);
-                cityWorld.getBlockAt(pos[0],y+1,pos[1]).setType(Material.OAK_FENCE,false);
-                cityWorld.getBlockAt(pos[0],y+2,pos[1]).setType(Material.LANTERN,false);
+                placeGeneratedBlock(changes,cityWorld.getBlockAt(pos[0],y,pos[1]),Material.OAK_FENCE);
+                placeGeneratedBlock(changes,cityWorld.getBlockAt(pos[0],y+1,pos[1]),Material.OAK_FENCE);
+                placeGeneratedBlock(changes,cityWorld.getBlockAt(pos[0],y+2,pos[1]),Material.LANTERN);
                 lampCount++;
             }
         }
-        if(create) player.sendMessage(msg("Park &e"+area.id()+"&a generated: &f"+changed+"&a ground blocks and &f"+lampCount+"&a lamps; occupied blocks skipped: &c"+skipped));
+        if(create) { persistWorldgenOperation(operationId,player,"PARK",changes); player.sendMessage(msg("Park &e"+area.id()+"&a generated: &f"+changed+"&a ground blocks and &f"+lampCount+"&a lamps; occupied blocks skipped: &c"+skipped+". Undo ID: &e"+operationId)); }
         else player.sendMessage(msg("Park preview &e"+area.id()+"&a: &f"+eligible+"&a clear ground blocks, &c"+skipped+"&a occupied; up to 4 lamp locations."));
     }
 
@@ -766,6 +778,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         int lampSpacing = Math.max(6, getConfig().getInt("road-builder.streetlight-spacing", 12));
         int center = width / 2;
         int eligible = 0, skipped = 0, changed = 0;
+        String operationId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
         for (int along = 0; along < length; along++) {
             for (int across = 0; across < width; across++) {
                 int x = alongX ? area.minX() + along : area.minX() + across;
@@ -778,7 +792,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 var block = cityWorld.getBlockAt(x, y, z);
                 if (block.getType() == Material.AIR || block.isPassable()) {
                     eligible++;
-                    if (create) { block.setType(surface, false); changed++; }
+                    if (create) { placeGeneratedBlock(changes,block,surface); changed++; }
                 } else skipped++;
             }
         }
@@ -793,16 +807,66 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     for (int dy = 0; dy < 4; dy++) if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
                     lampCandidates++;
                     if (create && clear) {
-                        cityWorld.getBlockAt(x, baseY, z).setType(Material.STONE_BRICK_WALL, false);
-                        cityWorld.getBlockAt(x, baseY + 1, z).setType(Material.STONE_BRICK_WALL, false);
-                        cityWorld.getBlockAt(x, baseY + 2, z).setType(Material.LANTERN, false);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY,z),Material.STONE_BRICK_WALL);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+1,z),Material.STONE_BRICK_WALL);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+2,z),Material.LANTERN);
                         lampsPlaced++;
                     }
                 }
             }
         }
-        if (create) player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped."));
+        if (create) { persistWorldgenOperation(operationId,player,"ROAD",changes); player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped. Undo ID: &e"+operationId)); }
         else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
+    }
+
+    private void placeGeneratedBlock(List<String[]> changes, org.bukkit.block.Block block, Material material) {
+        if(block.getType()!=Material.AIR && !block.isPassable()) return;
+        String oldData=block.getBlockData().getAsString();
+        block.setType(material,false);
+        changes.add(new String[]{block.getWorld().getName(),Integer.toString(block.getX()),Integer.toString(block.getY()),Integer.toString(block.getZ()),oldData,block.getBlockData().getAsString()});
+    }
+
+    private void persistWorldgenOperation(String id,Player player,String kind,List<String[]> changes) {
+        if(changes.isEmpty()) return;
+        try {
+            db.setAutoCommit(false);
+            try(PreparedStatement op=db.prepareStatement("INSERT INTO worldgen_operations(id,player_uuid,player_name,kind) VALUES(?,?,?,?)");
+                PreparedStatement ps=db.prepareStatement("INSERT INTO worldgen_changes(operation_id,world,x,y,z,old_data,new_data) VALUES(?,?,?,?,?,?,?)")){
+                op.setString(1,id); op.setString(2,player.getUniqueId().toString()); op.setString(3,player.getName()); op.setString(4,kind); op.executeUpdate();
+                for(String[] c:changes){
+                    ps.setString(1,id); ps.setString(2,c[0]); ps.setInt(3,Integer.parseInt(c[1])); ps.setInt(4,Integer.parseInt(c[2])); ps.setInt(5,Integer.parseInt(c[3])); ps.setString(6,c[4]); ps.setString(7,c[5]); ps.addBatch();
+                }
+                ps.executeBatch(); db.commit();
+            } catch(Exception ex){ db.rollback(); throw ex; }
+            finally { db.setAutoCommit(true); }
+        } catch(Exception ex){ getLogger().severe("Could not save worldgen undo data for "+id+": "+ex.getMessage()); player.sendMessage(msg("WARNING: build completed but undo snapshot could not be saved. Contact an admin; operation "+id)); }
+    }
+
+    private void undoWorldgen(CommandSender sender,String id) throws SQLException {
+        try(PreparedStatement check=db.prepareStatement("SELECT status FROM worldgen_operations WHERE id=?")){
+            check.setString(1,id);
+            try(ResultSet rs=check.executeQuery()){
+                if(!rs.next()){ sender.sendMessage(msg("Unknown worldgen operation ID.")); return; }
+                if(!rs.getString("status").equals("ACTIVE")){ sender.sendMessage(msg("This operation has already been undone or closed.")); return; }
+            }
+        }
+        int restored=0,skipped=0;
+        try(PreparedStatement ps=db.prepareStatement("SELECT rowid,world,x,y,z,old_data,new_data FROM worldgen_changes WHERE operation_id=? AND restored=0")){
+            ps.setString(1,id);
+            try(ResultSet rs=ps.executeQuery()){
+                while(rs.next()){
+                    World w=Bukkit.getWorld(rs.getString("world"));
+                    if(w==null){ skipped++; continue; }
+                    org.bukkit.block.Block block=w.getBlockAt(rs.getInt("x"),rs.getInt("y"),rs.getInt("z"));
+                    if(!block.getBlockData().getAsString().equals(rs.getString("new_data"))){ skipped++; continue; }
+                    block.setBlockData(Bukkit.createBlockData(rs.getString("old_data")),false);
+                    try(PreparedStatement mark=db.prepareStatement("UPDATE worldgen_changes SET restored=1 WHERE rowid=?")){ mark.setLong(1,rs.getLong("rowid")); mark.executeUpdate(); }
+                    restored++;
+                }
+            }
+        }
+        try(PreparedStatement ps=db.prepareStatement("UPDATE worldgen_operations SET status='UNDONE' WHERE id=?")){ ps.setString(1,id); ps.executeUpdate(); }
+        sender.sendMessage(msg("Undo complete for &e"+id+"&a: restored &f"+restored+"&a blocks; &c"+skipped+"&a skipped because they changed or their world is unloaded."));
     }
 
     private void validateId(String id) {
