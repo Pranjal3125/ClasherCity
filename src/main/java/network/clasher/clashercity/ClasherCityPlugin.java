@@ -845,9 +845,9 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         placeGeneratedBlock(changes,block,Material.OAK_SIGN);
         if(block.getState() instanceof org.bukkit.block.Sign sign){
             sign.setLine(0,color("&b&lCLASHERCITY"));
-            sign.setLine(1,color("&f"+plot.id()));
+            sign.setLine(1,color("&f"+plot.id()+" &e"+economy.format(plot.price())));
             sign.setLine(2,color(plot.ownerUuid()==null?"&aAVAILABLE":"&cSOLD"));
-            sign.setLine(3,color("&e"+economy.format(plot.price())));
+            sign.setLine(3,color(plot.ownerUuid()==null?"&7No owner":("&f"+plot.ownerName())));
             sign.update(true,false);
         }
         try(PreparedStatement ps=db.prepareStatement("INSERT INTO plot_boards(plot_id,world,x,y,z) VALUES(?,?,?,?,?) ON CONFLICT(plot_id) DO UPDATE SET world=excluded.world,x=excluded.x,y=excluded.y,z=excluded.z")){
@@ -873,9 +873,9 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     try(ResultSet e=entry.executeQuery()){ entered=e.next(); }
                 }
                 sign.setLine(0,color("&b&lCLASHERCITY"));
-                sign.setLine(1,color("&f"+plot.id()));
+                sign.setLine(1,color("&f"+plot.id()+" &e"+economy.format(plot.price())));
                 sign.setLine(2,color(plot.ownerUuid()==null?"&aAVAILABLE":"&cSOLD"));
-                sign.setLine(3,color("&e"+economy.format(plot.price())+(entered?" &d★":"")));
+                sign.setLine(3,color(entered?"&dIN TOURNAMENT":(plot.ownerUuid()==null?"&7No owner":"&f"+plot.ownerName())));
                 sign.update(true,false);
             }
         } catch(Exception ex){ getLogger().warning("Could not refresh plot board "+plotId+": "+ex.getMessage()); }
@@ -1164,6 +1164,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 manager.saveChanges();
                 db.commit();
                 mapRenderer.invalidate();
+                refreshPlotBoard(plot.id());
                 player.sendMessage(msg("You purchased plot &e" + plot.id() + "&a for &e" + economy.format(plot.price()) + "&a."));
                 player.sendMessage(msg("Use &e/plot home " + plot.id() + "&a to visit your plot."));
             } catch (Exception ex) {
@@ -1231,6 +1232,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 if (!refund.transactionSuccess()) getLogger().severe("Refund failed for " + player.getName() + " plot " + id + ": " + refund.errorMessage);
             }
             mapRenderer.invalidate();
+            refreshPlotBoard(id);
             player.sendMessage(msg("You released plot " + id + "."));
         } catch (Exception ex) { player.sendMessage(msg("Could not release plot: " + ex.getMessage())); getLogger().warning("Abandon failed for " + id + ": " + ex.getMessage()); }
     }
