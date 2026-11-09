@@ -1,0 +1,52 @@
+# ClasherCity 1.0.0 - Clasher Network
+city:
+  world: clasher_city
+  auto-load-world: true
+  spawn-set: false
+  spawn:
+    x: 0.5
+    y: 65.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+plots:
+  minimum-size: 10
+  allow-multiple: true
+  max-per-player: 2
+  refund-on-abandon: false
+  gui-title: '&8ClasherCity | Plots'
+
+protection:
+  plot-region-prefix: 'plot_'
+  road-region-prefix: 'road_'
+  public-region-prefix: 'public_'
+  global-build-deny: true
+
+economy:
+  currency-format: vault
+
+voting:
+  minimum-playtime-minutes: 0
+  player-weight: 50.0
+  judge-weight: 50.0
+
+# Judge category maximum marks (must total 100). Category names are used in /clcity score.
+judging:
+  categories:
+    creativity: 25
+    exterior: 25
+    interior: 20
+    detailing: 15
+    theme: 15
+
+# Put valid console commands from your installed reward plugins here.
+# Placeholders: {player}, {uuid}, {plot}, {rank}
+# Commands are deliberately blank until you confirm the exact Infinity Caves / SmartSpawner syntax.
+rewards:
+  first-commands: []
+  second-commands: []
+  third-commands: []
+
+messages:
+  prefix: '&8[&6ClasherCity&8] '

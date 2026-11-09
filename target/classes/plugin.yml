@@ -1,0 +1,43 @@
+name: ClasherCity
+version: '1.0.0'
+main: network.clasher.clashercity.ClasherCityPlugin
+api-version: '26.2'
+author: Clasher Network
+description: Automated city plots and building tournament system.
+website: https://clashernetwork.example
+load: POSTWORLD
+depend: [WorldGuard, Vault]
+softdepend: [FastAsyncWorldEdit, SmartSpawner, Essentials]
+commands:
+  clcity:
+    description: ClasherCity administrator controls
+    usage: /clcity help
+    permission: clashercity.admin
+  city:
+    description: Open the ClasherCity main menu
+    usage: /city [visit]
+  citymap:
+    description: Open the ClasherCity map menu
+    usage: /citymap
+  plots:
+    description: Browse ClasherCity plots
+    usage: /plots
+  plot:
+    description: Claim, visit, inspect or release a city plot
+    usage: /plot <claim|enter|home|info|abandon> [plot-id]
+  buildvote:
+    description: Vote for a ClasherCity building entry
+    usage: /buildvote
+  buildtop:
+    description: View ClasherCity tournament standings
+    usage: /buildtop
+permissions:
+  clashercity.admin:
+    description: Full ClasherCity administration
+    default: op
+  clashercity.bypass:
+    description: Bypass ClasherCity's own event-level restrictions
+    default: op
+  clashercity.judge:
+    description: Allows judge score submission when registered for the tournament
+    default: false

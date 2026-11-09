@@ -1,0 +1,40 @@
+ClasherCity 1.0.0 — build and verification status
+
+PACKAGE CONTENTS
+- Complete Java source project
+- Maven build configuration
+- Paper plugin.yml and default config.yml
+- Windows and Linux/macOS build scripts
+- GitHub Actions Java 25 Maven build workflow
+- README with installation, setup, commands and test checklist
+
+IMPORTANT: NO JAR WAS BUILT IN THIS SESSION.
+
+The available build container has OpenJDK 21 and does not have Maven or the Paper/WorldGuard/FAWE/Vault dependency artifacts. Paper 26.2 requires Java 25. Therefore it would be misleading to provide a JAR or claim compile/runtime verification here.
+
+BUILD ON A MACHINE WITH:
+- JDK 25
+- Maven 3.9+
+- Internet access to the configured Maven repositories
+
+Then run from this project directory:
+    mvn -U clean package
+
+Expected output:
+    target/ClasherCity-1.0.0.jar
+
+On Windows, run build.bat. On Linux/macOS, run ./build.sh.
+A GitHub Actions workflow is included at .github/workflows/build.yml; push the project to a GitHub repository and run the Build ClasherCity workflow to compile and download the JAR artifact.
+
+DEPLOYMENT SAFETY
+- Install the resulting JAR on the TEST server first, never directly on the live server.
+- Back up the test world, plugins/ClasherCity folder and WorldGuard data before testing.
+- Reward command lists are intentionally empty until the exact Infinity Caves and SmartSpawner commands are confirmed.
+- Run the test checklist in README.md before considering live deployment.
+
+VERIFICATION COMPLETED IN THIS SESSION
+- pom.xml parsed as valid XML.
+- plugin.yml, config.yml and GitHub workflow parsed as valid YAML.
+- The CREATE TABLE statements were executed against SQLite in-memory successfully.
+- Java source was checked for obvious parser/syntax diagnostics using javac, but dependencies were absent; this is not a successful compilation.
+- No live Paper server or test server was connected, so runtime behavior is not verified.
