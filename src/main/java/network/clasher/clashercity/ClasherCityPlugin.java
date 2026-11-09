@@ -545,6 +545,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity undo <operation-id> confirm"); break; }
                     undoWorldgen(sender,args[1]);
                 }
+                case "entrance" -> {
+                    if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity entrance <preview|create>"); break; }
+                    if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity entrance <preview|create>"); break; }
+                    buildCityEntrance(p,args[1].equalsIgnoreCase("create"));
+                }
                 case "planningcentre" -> {
                     if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity planningcentre <preview|create>"); break; }
                     if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity planningcentre <preview|create>"); break; }
@@ -622,6 +627,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity ceremony <preview|start> &7- Build podium and announce top 3"));
         sender.sendMessage(color("&e/clcity plotboard <id> <preview|create> &7- Place a live plot information board"));
         sender.sendMessage(color("&e/clcity planningcentre <preview|create> &7- Build the modern city planning centre"));
+        sender.sendMessage(color("&e/clcity entrance <preview|create> &7- Build the grand city entrance"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
@@ -836,6 +842,62 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         }
         if (create) { persistWorldgenOperation(operationId,player,"ROAD",changes); player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped. Undo ID: &e"+operationId)); }
         else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
+    }
+
+    private void buildCityEntrance(Player player,boolean create) {
+        if(cityWorld==null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("Stand in the city world to build the entrance.");
+        int cx=player.getLocation().getBlockX(), cz=player.getLocation().getBlockZ();
+        String operationId=UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes=new ArrayList<>();
+        int eligible=0,skipped=0,placed=0;
+        for(int side:new int[]{-4,4}){
+            int x=cx+side, z=cz;
+            int ground=cityWorld.getHighestBlockYAt(x,z);
+            for(int dy=1;dy<=5;dy++){
+                org.bukkit.block.Block block=cityWorld.getBlockAt(x,ground+dy,z);
+                if(block.getType().isAir()||block.isPassable()){
+                    eligible++;
+                    if(create){ placeGeneratedBlock(changes,block,dy<=3?Material.STONE_BRICKS:Material.SEA_LANTERN); placed++; }
+                } else skipped++;
+            }
+        }
+        for(int dx=-4;dx<=4;dx++){
+            int x=cx+dx,z=cz,ground=cityWorld.getHighestBlockYAt(x,z);
+            org.bukkit.block.Block arch=cityWorld.getBlockAt(x,ground+5,z);
+            if(arch.getType().isAir()||arch.isPassable()){
+                eligible++;
+                if(create){ placeGeneratedBlock(changes,arch,Material.QUARTZ_BLOCK); placed++; }
+            } else skipped++;
+        }
+        for(int dz=2;dz<=12;dz++) for(int dx=-4;dx<=4;dx++){
+            int x=cx+dx,z=cz+dz,ground=cityWorld.getHighestBlockYAt(x,z)+1;
+            Material material=Math.abs(dx)>=3?Material.LIGHT_GRAY_CONCRETE:(dx==0?Material.WHITE_CONCRETE:Material.BLACK_CONCRETE);
+            org.bukkit.block.Block road=cityWorld.getBlockAt(x,ground,z);
+            if(road.getType().isAir()||road.isPassable()){
+                eligible++;
+                if(create){ placeGeneratedBlock(changes,road,material); placed++; }
+            } else skipped++;
+        }
+        int signX=cx, signZ=cz;
+        int signY=cityWorld.getHighestBlockYAt(signX,signZ+1)+1;
+        org.bukkit.block.Block signBlock=cityWorld.getBlockAt(signX,signY,signZ+1);
+        if(signBlock.getType().isAir()||signBlock.isPassable()){
+            eligible++;
+            if(create){
+                placeGeneratedBlock(changes,signBlock,Material.OAK_SIGN);
+                if(signBlock.getState() instanceof org.bukkit.block.Sign sign){
+                    sign.setLine(0,color("&6&lWELCOME"));
+                    sign.setLine(1,color("&b&lCLASHERCITY"));
+                    sign.setLine(2,color("&fBuild • Explore"));
+                    sign.setLine(3,color("&eClasher Network"));
+                    sign.update(true,false);
+                }
+                placed++;
+            }
+        } else skipped++;
+        if(!create){ player.sendMessage(msg("Grand entrance preview: &f"+eligible+"&a clear block positions; &c"+skipped+"&a occupied. Arch width 9, height 5, approach road 9x11.")); return; }
+        persistWorldgenOperation(operationId,player,"CITY_ENTRANCE",changes);
+        player.sendMessage(msg("Grand CLASHERCITY entrance generated: &f"+placed+"&a blocks placed, &c"+skipped+"&a skipped. Undo ID: &e"+operationId));
     }
 
     private void buildPlanningCentre(Player player,boolean create) {
