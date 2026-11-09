@@ -1078,28 +1078,30 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     }
 
     private void visitPlayerPlot(Player visitor, String targetName) {
-        Player owner = Bukkit.getPlayerExact(targetName);
-        if (owner == null) { visitor.sendMessage(msg("That player must be online to visit their plot.")); return; }
-        if (owner.getUniqueId().equals(visitor.getUniqueId())) { teleportHome(visitor, null); return; }
+        if (targetName == null || targetName.isBlank()) { visitor.sendMessage(msg("Usage: /plot visit <player>")); return; }
         try {
-            if (!plotVisitsEnabled(owner.getUniqueId())) { visitor.sendMessage(msg("That player has disabled plot visits.")); return; }
             Plot plot = null;
-            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM plots WHERE owner_uuid=? ORDER BY id LIMIT 1")) {
-                ps.setString(1, owner.getUniqueId().toString());
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM plots WHERE lower(owner_name)=lower(?) ORDER BY id LIMIT 1")) {
+                ps.setString(1, targetName);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) plot = new Plot(rs.getString("id"), rs.getString("world"), rs.getInt("min_x"), rs.getInt("min_z"),
                             rs.getInt("max_x"), rs.getInt("max_z"), rs.getDouble("price"), rs.getString("owner_uuid"), rs.getString("owner_name"));
                 }
             }
-            if (plot == null) { visitor.sendMessage(msg("That player does not own a ClasherCity plot.")); return; }
+            if (plot == null || plot.ownerUuid() == null) { visitor.sendMessage(msg("That player does not own a ClasherCity plot.")); return; }
+            UUID ownerId = UUID.fromString(plot.ownerUuid());
+            if (ownerId.equals(visitor.getUniqueId())) { teleportHome(visitor, plot.id()); return; }
+            if (!plotVisitsEnabled(ownerId)) { visitor.sendMessage(msg("That player has disabled plot visits.")); return; }
             World world = Bukkit.getWorld(plot.world());
             if (world == null) { visitor.sendMessage(msg("The city world is not loaded.")); return; }
             int x = (plot.minX() + plot.maxX()) / 2, z = (plot.minZ() + plot.maxZ()) / 2;
             visitor.teleport(new Location(world, x + 0.5, world.getHighestBlockYAt(x, z) + 1.0, z + 0.5));
-            visitor.sendMessage(msg("Visiting &e" + owner.getName() + "&a's plot &f" + plot.id() + "&a."));
-            if (getConfig().getBoolean("plots.notify-owner-on-visit", true))
+            visitor.sendMessage(msg("Visiting &e" + plot.ownerName() + "&a's plot &f" + plot.id() + "&a."));
+            Player owner = Bukkit.getPlayer(ownerId);
+            if (owner != null && getConfig().getBoolean("plots.notify-owner-on-visit", true))
                 owner.sendMessage(msg("&e" + visitor.getName() + "&a is visiting your plot &f" + plot.id() + "&a."));
         } catch (SQLException ex) { visitor.sendMessage(msg("Could not load that player's plot.")); }
+        catch (IllegalArgumentException ex) { visitor.sendMessage(msg("The plot owner record is invalid. Contact staff.")); }
     }
 
     private void teleportHome(Player player, String id) {
