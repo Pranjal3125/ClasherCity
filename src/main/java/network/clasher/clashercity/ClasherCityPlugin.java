@@ -1159,6 +1159,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         player.openInventory(inv);
     }
 
+    private boolean hasVoted(Player player) {
+        try (PreparedStatement ps = db.prepareStatement("SELECT 1 FROM votes WHERE tournament_id=? AND voter_uuid=? LIMIT 1")) {
+            ps.setString(1, tournamentId());
+            ps.setString(2, player.getUniqueId().toString());
+            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
+        } catch (SQLException ex) {
+            getLogger().warning("Could not check voting status: " + ex.getMessage());
+            return true;
+        }
+    }
+
     private void openVoteConfirm(Player player, String plotId) {
         try {
             Plot plot = getPlot(plotId);
