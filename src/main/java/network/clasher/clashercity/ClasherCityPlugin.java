@@ -948,6 +948,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(color(name));
         meta.setLore(lore.stream().map(this::color).toList());
+        meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES, org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS, org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
         if (action != null) meta.getPersistentDataContainer().set(keyAction, PersistentDataType.STRING, action);
         if (plotId != null) meta.getPersistentDataContainer().set(keyPlot, PersistentDataType.STRING, plotId);
         item.setItemMeta(meta);
@@ -955,22 +956,24 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     }
 
     private void frameMenu(Inventory inv, Material material) {
+        Material accent = material == Material.GRAY_STAINED_GLASS_PANE ? Material.LIGHT_BLUE_STAINED_GLASS_PANE : Material.GRAY_STAINED_GLASS_PANE;
         ItemStack pane = menuItem(material, "&8 ", List.of(), "none", null);
+        ItemStack accentPane = menuItem(accent, "&8 ", List.of(), "none", null);
         int rows = inv.getSize() / 9;
-        for (int col = 0; col < 9; col++) { inv.setItem(col, pane); inv.setItem((rows - 1) * 9 + col, pane); }
-        for (int row = 1; row < rows - 1; row++) { inv.setItem(row * 9, pane); inv.setItem(row * 9 + 8, pane); }
+        for (int col = 0; col < 9; col++) { inv.setItem(col, col == 4 ? accentPane : pane); inv.setItem((rows - 1) * 9 + col, col == 4 ? accentPane : pane); }
+        for (int row = 1; row < rows - 1; row++) { inv.setItem(row * 9, accentPane); inv.setItem(row * 9 + 8, accentPane); }
     }
 
     private void openMainMenu(Player player) {
         MenuHolder holder = new MenuHolder("MAIN", 0);
         Inventory inv = holder.create(27, color("&8✦  CLASHERCITY  &8•  &7CITY PORTAL"));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
-        inv.setItem(8, menuItem(Material.COMPASS, "&bVisit city", List.of("&7Teleport to the ClasherCity spawn"), "visit", null));
-        inv.setItem(10, menuItem(Material.LIME_CONCRETE, "&aPlot marketplace", List.of("&7Browse available city plots", "&eClick to open"), "plots", null));
-        inv.setItem(12, menuItem(Material.FILLED_MAP, "&bCity map", List.of("&7View plot availability"), "map", null));
-        inv.setItem(14, menuItem(Material.OAK_DOOR, "&eMy plot", List.of("&7Teleport to your first owned plot"), "home", null));
-        inv.setItem(16, menuItem(Material.WRITABLE_BOOK, "&dTournament & voting", List.of("&7Phase: &f" + phase(), "&7Use /buildvote during voting"), "vote", null));
-        inv.setItem(22, menuItem(Material.GOLD_INGOT, "&6Leaderboard", List.of("&7View current standings"), "top", null));
+        inv.setItem(11, menuItem(Material.COMPASS, "&b&lCITY SPAWN", List.of("&8DESTINATION", "", "&7Teleport to the city hub.", "&7Explore the ClasherCity district.", "", "&e➜ Click to travel"), "visit", null));
+        inv.setItem(13, menuItem(Material.LIME_CONCRETE, "&a&lPLOT MARKETPLACE", List.of("&8REAL ESTATE", "", "&7Browse plots and their prices.", "&7Purchase your own city property.", "", "&e➜ Browse properties"), "plots", null));
+        inv.setItem(15, menuItem(Material.FILLED_MAP, "&3&lCITY ATLAS", List.of("&8CITY OVERVIEW", "", "&7View the city layout.", "&7Check available and sold plots.", "", "&e➜ Open atlas"), "map", null));
+        inv.setItem(20, menuItem(Material.OAK_DOOR, "&e&lMY PROPERTY", List.of("&8PERSONAL SHORTCUT", "", "&7Teleport to your owned plot.", "", "&e➜ Go to my plot"), "home", null));
+        inv.setItem(22, menuItem(Material.WRITABLE_BOOK, "&d&lCHAMPIONSHIP", List.of("&8BUILDING TOURNAMENT", "", "&7Current phase: &f" + phase(), "&7Open tournament voting.", "", "&e➜ View tournament"), "vote", null));
+        inv.setItem(24, menuItem(Material.GOLD_INGOT, "&6&lHALL OF FAME", List.of("&8LEADERBOARD", "", "&7See the current top builders.", "&7Check tournament standings.", "", "&e➜ View rankings"), "top", null));
         player.openInventory(inv);
     }
 
