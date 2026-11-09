@@ -1823,11 +1823,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         try { facing=BlockFace.valueOf(getConfig().getString("map-wall.facing","SOUTH")); }
         catch(IllegalArgumentException ex){ facing=BlockFace.SOUTH; }
         if(!facing.isCartesian() || facing.getModY()!=0){ player.sendMessage(msg("Map wall facing must be horizontal. Reselect while facing north, south, east or west.")); return; }
-        int rightX=-facing.getModZ(), rightZ=facing.getModX();
+        final BlockFace wallFacing=facing;
+        int rightX=-wallFacing.getModZ(), rightZ=wallFacing.getModX();
+        if(create) for(org.bukkit.entity.Entity entity:world.getEntities()) if(entity instanceof org.bukkit.entity.ItemFrame && entity.getScoreboardTags().contains("clashercity_mapwall")) entity.remove();
         int frames=0, occupied=0;
         for(int row=0;row<4;row++) for(int col=0;col<4;col++){
             int x=baseX+rightX*col, y=baseY+row, z=baseZ+rightZ*col;
-            Block support=world.getBlockAt(x-facing.getModX(),y,z-facing.getModZ());
+            Block support=world.getBlockAt(x-wallFacing.getModX(),y,z-wallFacing.getModZ());
             if(support.getType().isAir() || support.isPassable()){ occupied++; continue; }
             boolean existing=world.getNearbyEntities(new Location(world,x+0.5,y+0.5,z+0.5),0.35,0.35,0.35).stream().anyMatch(e->e instanceof org.bukkit.entity.ItemFrame);
             if(existing){ occupied++; continue; }
@@ -1835,7 +1837,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             if(create){
                 final int tileX=col, tileY=3-row;
                 org.bukkit.entity.ItemFrame frame=world.spawn(new Location(world,x+0.5,y+0.5,z+0.5),org.bukkit.entity.ItemFrame.class, f->{
-                    f.setFacingDirection(facing,true);
+                    f.setFacingDirection(wallFacing,true);
                     f.addScoreboardTag("clashercity_mapwall");
                     f.setVisible(true);
                     f.setFixed(true);
