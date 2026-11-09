@@ -422,7 +422,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot abandon <plot-id>"));
                 else abandonPlot(player, args[1]);
             }
-            default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|info|abandon> [plot-id]"));
+            default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|visit|visits|progress|info|abandon> [arguments]"));
         }
         return true;
     }
