@@ -943,6 +943,21 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         player.sendMessage(msg("Modern City Planning Centre generated. Operation undo ID: &e"+operationId+"&a. The 4x4 map wall was placed on the rear wall."));
     }
 
+    private void updatePlotHologram(Plot plot,Location location) {
+        if(!getServer().getPluginManager().isPluginEnabled("DecentHolograms")) return;
+        try {
+            Class<?> api=Class.forName("eu.decentsoftware.holograms.api.DHAPI");
+            String name="clashercity_plot_"+plot.id().toLowerCase(Locale.ROOT);
+            List<String> lines=List.of("&b&lCLASHERCITY","&fPlot: &e"+plot.id(),
+                    plot.ownerUuid()==null?"&aAVAILABLE":"&cSOLD",
+                    "&7Price: &e"+economy.format(plot.price()),
+                    "&7Owner: &f"+(plot.ownerName()==null?"None":plot.ownerName()));
+            Object hologram=api.getMethod("getHologram",String.class).invoke(null,name);
+            if(hologram==null) api.getMethod("createHologram",String.class,Location.class,boolean.class,List.class).invoke(null,name,location,true,lines);
+            else api.getMethod("setHologramLines",hologram.getClass().getInterfaces().length>0?hologram.getClass().getInterfaces()[0]:hologram.getClass(),List.class).invoke(null,hologram,lines);
+        } catch(Exception ex){ getLogger().warning("DecentHolograms integration failed for plot "+plot.id()+": "+ex.getMessage()); }
+    }
+
     private void buildPlotBoard(Player player,String plotId,boolean create) throws SQLException {
         if(cityWorld==null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
         Plot plot=getPlot(plotId);
@@ -961,6 +976,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             sign.setLine(3,color(plot.ownerUuid()==null?"&7No owner":("&f"+plot.ownerName())));
             sign.update(true,false);
         }
+        updatePlotHologram(plot, new Location(cityWorld,x+0.5,y+2.2,z+0.5));
         try(PreparedStatement ps=db.prepareStatement("INSERT INTO plot_boards(plot_id,world,x,y,z) VALUES(?,?,?,?,?) ON CONFLICT(plot_id) DO UPDATE SET world=excluded.world,x=excluded.x,y=excluded.y,z=excluded.z")){
             ps.setString(1,plot.id()); ps.setString(2,cityWorld.getName()); ps.setInt(3,x); ps.setInt(4,y); ps.setInt(5,z); ps.executeUpdate();
         }
@@ -988,6 +1004,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 sign.setLine(2,color(plot.ownerUuid()==null?"&aAVAILABLE":"&cSOLD"));
                 sign.setLine(3,color(entered?"&dIN TOURNAMENT":(plot.ownerUuid()==null?"&7No owner":"&f"+plot.ownerName())));
                 sign.update(true,false);
+                updatePlotHologram(plot,new Location(w,rs.getInt("x")+0.5,rs.getInt("y")+2.2,rs.getInt("z")+0.5));
             }
         } catch(Exception ex){ getLogger().warning("Could not refresh plot board "+plotId+": "+ex.getMessage()); }
     }

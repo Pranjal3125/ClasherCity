@@ -7,7 +7,7 @@ description: Automated city plots and building tournament system.
 website: https://clashernetwork.example
 load: POSTWORLD
 depend: [WorldGuard, Vault]
-softdepend: [FastAsyncWorldEdit, SmartSpawner, Essentials]
+softdepend: [FastAsyncWorldEdit, SmartSpawner, Essentials, DecentHolograms]
 commands:
   clcity:
     description: ClasherCity administrator controls
