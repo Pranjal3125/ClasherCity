@@ -486,6 +486,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (!args[2].equalsIgnoreCase("preview") && !args[2].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity roadbuild <road-id> <preview|create>"); break; }
                     buildRoad(p, args[1], args[2].equalsIgnoreCase("create"));
                 }
+                case "parkbuild" -> {
+                    if (!(sender instanceof Player p) || args.length < 3) { sender.sendMessage("Usage: /clcity parkbuild <public-area-id> <preview|create>"); break; }
+                    if (!args[2].equalsIgnoreCase("preview") && !args[2].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity parkbuild <public-area-id> <preview|create>"); break; }
+                    buildPark(p, args[1], args[2].equalsIgnoreCase("create"));
+                }
                 case "setprice" -> {
                     if (args.length < 3) { sender.sendMessage("Usage: /clcity setprice <plot-id> <price>"); break; }
                     double price = Double.parseDouble(args[2]);
@@ -547,6 +552,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity border <plot-id> <preview|create> &7- Preview/build a safe plot border"));
         sender.sendMessage(color("&e/clcity createpublic <id> &7- Protect public area"));
         sender.sendMessage(color("&e/clcity roadbuild <id> <preview|create> &7- Preview/build a modern road"));
+        sender.sendMessage(color("&e/clcity parkbuild <id> <preview|create> &7- Preview/build a public park"));
         sender.sendMessage(color("&e/clcity setprice <id> <price> &7- Change plot price"));
         sender.sendMessage(color("&e/clcity deleteplot <id> confirm &7- Delete an unowned plot"));
         sender.sendMessage(color("&e/clcity setspawn &7- Save city spawn"));
@@ -668,6 +674,42 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         } else {
             player.sendMessage(msg("Border built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks."));
         }
+    }
+
+    private void buildPark(Player player, String areaId, boolean create) throws SQLException {
+        if (cityWorld == null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
+        Area area = getAreas().stream().filter(a -> a.type().equalsIgnoreCase("PUBLIC") && a.id().equalsIgnoreCase(areaId)).findFirst().orElse(null);
+        if (area == null) throw new IllegalArgumentException("Public area not found: " + areaId + ". Register it with /clcity createpublic first.");
+        long areaSize = (long)(area.maxX()-area.minX()+1)*(area.maxZ()-area.minZ()+1);
+        long maxBlocks = getConfig().getLong("park-builder.max-area-blocks", 20000L);
+        if (areaSize > maxBlocks) throw new IllegalArgumentException("Park area exceeds configured safety limit of " + maxBlocks + " blocks.");
+        int minX=area.minX(), maxX=area.maxX(), minZ=area.minZ(), maxZ=area.maxZ();
+        int midX=(minX+maxX)/2, midZ=(minZ+maxZ)/2;
+        int changed=0, skipped=0, eligible=0;
+        for(int x=minX;x<=maxX;x++) for(int z=minZ;z<=maxZ;z++) {
+            boolean path = Math.abs(x-midX)<=1 || Math.abs(z-midZ)<=1;
+            int y=cityWorld.getHighestBlockYAt(x,z)+1;
+            var block=cityWorld.getBlockAt(x,y,z);
+            if(block.getType()!=Material.AIR && !block.isPassable()){ skipped++; continue; }
+            eligible++;
+            if(create){ block.setType(path ? Material.POLISHED_ANDESITE : Material.GRASS_BLOCK,false); changed++; }
+        }
+        int lampCount=0;
+        int[][] corners={{minX+2,minZ+2},{minX+2,maxZ-2},{maxX-2,minZ+2},{maxX-2,maxZ-2}};
+        for(int[] pos:corners){
+            if(pos[0]<minX||pos[0]>maxX||pos[1]<minZ||pos[1]>maxZ) continue;
+            int y=cityWorld.getHighestBlockYAt(pos[0],pos[1])+1;
+            boolean clear=true;
+            for(int dy=0;dy<4;dy++) if(!cityWorld.getBlockAt(pos[0],y+dy,pos[1]).isPassable()) clear=false;
+            if(create&&clear){
+                cityWorld.getBlockAt(pos[0],y,pos[1]).setType(Material.OAK_FENCE,false);
+                cityWorld.getBlockAt(pos[0],y+1,pos[1]).setType(Material.OAK_FENCE,false);
+                cityWorld.getBlockAt(pos[0],y+2,pos[1]).setType(Material.LANTERN,false);
+                lampCount++;
+            }
+        }
+        if(create) player.sendMessage(msg("Park &e"+area.id()+"&a generated: &f"+changed+"&a ground blocks and &f"+lampCount+"&a lamps; occupied blocks skipped: &c"+skipped));
+        else player.sendMessage(msg("Park preview &e"+area.id()+"&a: &f"+eligible+"&a clear ground blocks, &c"+skipped+"&a occupied; up to 4 lamp locations."));
     }
 
     private void buildRoad(Player player, String roadId, boolean create) throws SQLException {

@@ -62,3 +62,7 @@ road-builder:
   max-area-blocks: 30000
   sidewalk-width: 2
   streetlight-spacing: 12
+
+# Park builder safety limit.
+park-builder:
+  max-area-blocks: 20000
