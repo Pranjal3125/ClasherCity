@@ -911,7 +911,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 Location fireworkLoc=new Location(cityWorld,x+0.5,ground+heights[rank]+3,z+0.5);
                 org.bukkit.entity.Firework firework=cityWorld.spawn(fireworkLoc,org.bukkit.entity.Firework.class);
                 org.bukkit.inventory.meta.FireworkMeta meta=firework.getFireworkMeta();
-                meta.addEffect(org.bukkit.FireworkEffect.builder().with(org.bukkit.FireworkEffect.Type.BALL_LARGE).withColor(java.awt.Color.ORANGE,java.awt.Color.AQUA).trail(true).flicker(true).build());
+                meta.addEffect(org.bukkit.FireworkEffect.builder().with(org.bukkit.FireworkEffect.Type.BALL_LARGE).withColor(java.awt.Color.ORANGE,java.awt.Color.CYAN).trail(true).flicker(true).build());
                 meta.setPower(1); firework.setFireworkMeta(meta);
             }
         }
