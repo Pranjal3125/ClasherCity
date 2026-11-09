@@ -168,6 +168,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS judges (tournament_id TEXT NOT NULL, judge_uuid TEXT NOT NULL, judge_name TEXT NOT NULL, PRIMARY KEY(tournament_id, judge_uuid))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS scores (tournament_id TEXT NOT NULL, judge_uuid TEXT NOT NULL, plot_id TEXT NOT NULL, category TEXT NOT NULL, score INTEGER NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tournament_id, judge_uuid, plot_id, category))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS reward_queue (tournament_id TEXT NOT NULL, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, rank INTEGER NOT NULL, plot_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT, PRIMARY KEY(tournament_id, player_uuid, rank))");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_visit_settings (player_uuid TEXT PRIMARY KEY, visits_enabled INTEGER NOT NULL DEFAULT 1)");
         }
     }
 
@@ -387,7 +388,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
 
     private boolean playerPlotCommand(Player player, String[] args) {
         if (args.length == 0) {
-            player.sendMessage(msg("Usage: /plot <claim|enter|home|info|abandon> [plot-id]"));
+            player.sendMessage(msg("Usage: /plot <claim|enter|home|visit|visits|info|abandon> [plot-id|player|on|off]"));
             return true;
         }
         switch (args[0].toLowerCase(Locale.ROOT)) {
@@ -400,6 +401,14 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 else enterPlot(player, args[1]);
             }
             case "home" -> teleportHome(player, args.length >= 2 ? args[1] : null);
+            case "visit" -> {
+                if (args.length < 2) player.sendMessage(msg("Usage: /plot visit <player>"));
+                else visitPlayerPlot(player, args[1]);
+            }
+            case "visits" -> {
+                if (args.length < 2 || (!args[1].equalsIgnoreCase("on") && !args[1].equalsIgnoreCase("off"))) player.sendMessage(msg("Usage: /plot visits <on|off>"));
+                else setPlotVisits(player, args[1].equalsIgnoreCase("on"));
+            }
             case "info" -> {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot info <plot-id>"));
                 else showPlotInfo(player, args[1]);
@@ -1007,6 +1016,47 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             player.sendMessage(color("&6Plot &e" + p.id() + " &7| &6Size: &f" + (p.maxX() - p.minX() + 1) + "x" + (p.maxZ() - p.minZ() + 1)
                     + " &7| &6Price: &e" + economy.format(p.price()) + " &7| &6Owner: &f" + owner));
         } catch (SQLException ex) { player.sendMessage(msg("Database error.")); }
+    }
+
+    private boolean plotVisitsEnabled(UUID uuid) throws SQLException {
+        try (PreparedStatement ps = db.prepareStatement("SELECT visits_enabled FROM plot_visit_settings WHERE player_uuid=?")) {
+            ps.setString(1, uuid.toString());
+            try (ResultSet rs = ps.executeQuery()) { return !rs.next() || rs.getInt(1) == 1; }
+        }
+    }
+
+    private void setPlotVisits(Player player, boolean enabled) {
+        try (PreparedStatement ps = db.prepareStatement("INSERT INTO plot_visit_settings(player_uuid,visits_enabled) VALUES(?,?) ON CONFLICT(player_uuid) DO UPDATE SET visits_enabled=excluded.visits_enabled")) {
+            ps.setString(1, player.getUniqueId().toString());
+            ps.setInt(2, enabled ? 1 : 0);
+            ps.executeUpdate();
+            player.sendMessage(msg("Plot visits are now " + (enabled ? "&aenabled" : "&cdisabled") + "&a."));
+        } catch (SQLException ex) { player.sendMessage(msg("Could not update visit settings.")); }
+    }
+
+    private void visitPlayerPlot(Player visitor, String targetName) {
+        Player owner = Bukkit.getPlayerExact(targetName);
+        if (owner == null) { visitor.sendMessage(msg("That player must be online to visit their plot.")); return; }
+        if (owner.getUniqueId().equals(visitor.getUniqueId())) { teleportHome(visitor, null); return; }
+        try {
+            if (!plotVisitsEnabled(owner.getUniqueId())) { visitor.sendMessage(msg("That player has disabled plot visits.")); return; }
+            Plot plot = null;
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM plots WHERE owner_uuid=? ORDER BY id LIMIT 1")) {
+                ps.setString(1, owner.getUniqueId().toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) plot = new Plot(rs.getString("id"), rs.getString("world"), rs.getInt("min_x"), rs.getInt("min_z"),
+                            rs.getInt("max_x"), rs.getInt("max_z"), rs.getDouble("price"), rs.getString("owner_uuid"), rs.getString("owner_name"));
+                }
+            }
+            if (plot == null) { visitor.sendMessage(msg("That player does not own a ClasherCity plot.")); return; }
+            World world = Bukkit.getWorld(plot.world());
+            if (world == null) { visitor.sendMessage(msg("The city world is not loaded.")); return; }
+            int x = (plot.minX() + plot.maxX()) / 2, z = (plot.minZ() + plot.maxZ()) / 2;
+            visitor.teleport(new Location(world, x + 0.5, world.getHighestBlockYAt(x, z) + 1.0, z + 0.5));
+            visitor.sendMessage(msg("Visiting &e" + owner.getName() + "&a's plot &f" + plot.id() + "&a."));
+            if (getConfig().getBoolean("plots.notify-owner-on-visit", true))
+                owner.sendMessage(msg("&e" + visitor.getName() + "&a is visiting your plot &f" + plot.id() + "&a."));
+        } catch (SQLException ex) { visitor.sendMessage(msg("Could not load that player's plot.")); }
     }
 
     private void teleportHome(Player player, String id) {
