@@ -467,6 +467,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity createpublic <id>"); break; }
                     createAreaFromSelection(p, args[1], "PUBLIC");
                 }
+                case "roadbuild" -> {
+                    if (!(sender instanceof Player p) || args.length < 3) { sender.sendMessage("Usage: /clcity roadbuild <road-id> <preview|create>"); break; }
+                    if (!args[2].equalsIgnoreCase("preview") && !args[2].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity roadbuild <road-id> <preview|create>"); break; }
+                    buildRoad(p, args[1], args[2].equalsIgnoreCase("create"));
+                }
                 case "setprice" -> {
                     if (args.length < 3) { sender.sendMessage("Usage: /clcity setprice <plot-id> <price>"); break; }
                     double price = Double.parseDouble(args[2]);
@@ -527,6 +532,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity createroad <id> &7- Protect a road selection"));
         sender.sendMessage(color("&e/clcity border <plot-id> <preview|create> &7- Preview/build a safe plot border"));
         sender.sendMessage(color("&e/clcity createpublic <id> &7- Protect public area"));
+        sender.sendMessage(color("&e/clcity roadbuild <id> <preview|create> &7- Preview/build a modern road"));
         sender.sendMessage(color("&e/clcity setprice <id> <price> &7- Change plot price"));
         sender.sendMessage(color("&e/clcity deleteplot <id> confirm &7- Delete an unowned plot"));
         sender.sendMessage(color("&e/clcity setspawn &7- Save city spawn"));
@@ -648,6 +654,60 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         } else {
             player.sendMessage(msg("Border built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks."));
         }
+    }
+
+    private void buildRoad(Player player, String roadId, boolean create) throws SQLException {
+        if (cityWorld == null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
+        Area area = getAreas().stream().filter(a -> a.type().equalsIgnoreCase("ROAD") && a.id().equalsIgnoreCase(roadId)).findFirst().orElse(null);
+        if (area == null) throw new IllegalArgumentException("Protected road area not found: " + roadId);
+        long areaSize = (long) (area.maxX() - area.minX() + 1) * (area.maxZ() - area.minZ() + 1);
+        long maxBlocks = getConfig().getLong("road-builder.max-area-blocks", 30000L);
+        if (areaSize > maxBlocks) throw new IllegalArgumentException("Road area is " + areaSize + " blocks; configured safety limit is " + maxBlocks + ".");
+        boolean alongX = (area.maxX() - area.minX()) >= (area.maxZ() - area.minZ());
+        int length = alongX ? area.maxX() - area.minX() + 1 : area.maxZ() - area.minZ() + 1;
+        int width = alongX ? area.maxZ() - area.minZ() + 1 : area.maxX() - area.minX() + 1;
+        if (width < 5) throw new IllegalArgumentException("Road selection must be at least 5 blocks wide to fit asphalt and sidewalks.");
+        int sidewalkWidth = Math.max(1, Math.min(2, getConfig().getInt("road-builder.sidewalk-width", 2)));
+        int lampSpacing = Math.max(6, getConfig().getInt("road-builder.streetlight-spacing", 12));
+        int center = width / 2;
+        int eligible = 0, skipped = 0, changed = 0;
+        for (int along = 0; along < length; along++) {
+            for (int across = 0; across < width; across++) {
+                int x = alongX ? area.minX() + along : area.minX() + across;
+                int z = alongX ? area.minZ() + across : area.minZ() + along;
+                boolean sidewalk = across < sidewalkWidth || across >= width - sidewalkWidth;
+                boolean curb = across == sidewalkWidth || across == width - sidewalkWidth - 1;
+                boolean laneMark = across == center && (along % 8 < 4);
+                Material surface = sidewalk ? Material.LIGHT_GRAY_CONCRETE : (curb ? Material.GRAY_CONCRETE : (laneMark ? Material.WHITE_CONCRETE : Material.BLACK_CONCRETE));
+                int y = cityWorld.getHighestBlockYAt(x, z) + 1;
+                var block = cityWorld.getBlockAt(x, y, z);
+                if (block.getType() == Material.AIR || block.isPassable()) {
+                    eligible++;
+                    if (create) { block.setType(surface, false); changed++; }
+                } else skipped++;
+            }
+        }
+        int lampCandidates = 0, lampsPlaced = 0;
+        if (width >= 9) {
+            for (int along = 0; along < length; along += lampSpacing) {
+                for (int side : new int[]{sidewalkWidth - 1, width - sidewalkWidth}) {
+                    int x = alongX ? area.minX() + along : area.minX() + side;
+                    int z = alongX ? area.minZ() + side : area.minZ() + along;
+                    int baseY = cityWorld.getHighestBlockYAt(x, z) + 2;
+                    boolean clear = true;
+                    for (int dy = 0; dy < 4; dy++) if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
+                    lampCandidates++;
+                    if (create && clear) {
+                        cityWorld.getBlockAt(x, baseY, z).setType(Material.STONE_BRICK_WALL, false);
+                        cityWorld.getBlockAt(x, baseY + 1, z).setType(Material.STONE_BRICK_WALL, false);
+                        cityWorld.getBlockAt(x, baseY + 2, z).setType(Material.LANTERN, false);
+                        lampsPlaced++;
+                    }
+                }
+            }
+        }
+        if (create) player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped."));
+        else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
     }
 
     private void validateId(String id) {
