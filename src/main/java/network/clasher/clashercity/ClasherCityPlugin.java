@@ -522,6 +522,20 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (!(sender instanceof Player p)) { sender.sendMessage("Players only."); break; }
                     givePhysicalMap(p);
                 }
+                case "mapwall" -> {
+                    if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity mapwall <select|preview|create|update|remove>"); break; }
+                    String action=args[1].toLowerCase(Locale.ROOT);
+                    if(action.equals("select")) {
+                        Location l=p.getLocation().getBlock().getLocation();
+                        getConfig().set("map-wall.world",l.getWorld().getName());
+                        getConfig().set("map-wall.x",l.getBlockX()); getConfig().set("map-wall.y",l.getBlockY()); getConfig().set("map-wall.z",l.getBlockZ());
+                        getConfig().set("map-wall.facing",p.getFacing().getOppositeFace().name()); saveConfig();
+                        p.sendMessage(msg("Map wall anchor saved. Stand at the lower-left block of the 4x4 frame wall before selecting."));
+                    } else if(action.equals("remove")) removeMapWall(p);
+                    else if(action.equals("preview")) createMapWall(p,false);
+                    else if(action.equals("create") || action.equals("update")) createMapWall(p,true);
+                    else p.sendMessage(msg("Usage: /clcity mapwall <select|preview|create|update|remove>"));
+                }
                 case "start" -> startTournament(sender, args.length >= 2 ? String.join(" ", Arrays.copyOfRange(args, 1, args.length)) : "ClasherCity Building Championship");
                 case "phase" -> {
                     if (args.length < 2) { sender.sendMessage("Usage: /clcity phase <setup|registration|building|voting|results>"); break; }
@@ -563,6 +577,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity deleteplot <id> confirm &7- Delete an unowned plot"));
         sender.sendMessage(color("&e/clcity setspawn &7- Save city spawn"));
         sender.sendMessage(color("&e/clcity mapitem &7- Give physical map"));
+        sender.sendMessage(color("&e/clcity mapwall <select|preview|create|update|remove> &7- Manage 4x4 city map wall"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
@@ -1796,6 +1811,74 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         map.setItemMeta(meta);
         player.getInventory().addItem(map);
         player.sendMessage(msg("Physical city map given. Place it in an item frame at spawn."));
+    }
+
+    private void createMapWall(Player player, boolean create) {
+        String worldName=getConfig().getString("map-wall.world");
+        if(worldName==null){ player.sendMessage(msg("Select the map wall anchor first with /clcity mapwall select.")); return; }
+        World world=Bukkit.getWorld(worldName);
+        if(world==null){ player.sendMessage(msg("Map wall world is not loaded.")); return; }
+        int baseX=getConfig().getInt("map-wall.x"), baseY=getConfig().getInt("map-wall.y"), baseZ=getConfig().getInt("map-wall.z");
+        BlockFace facing;
+        try { facing=BlockFace.valueOf(getConfig().getString("map-wall.facing","SOUTH")); }
+        catch(IllegalArgumentException ex){ facing=BlockFace.SOUTH; }
+        if(!facing.isCartesian() || facing.getModY()!=0){ player.sendMessage(msg("Map wall facing must be horizontal. Reselect while facing north, south, east or west.")); return; }
+        int rightX=-facing.getModZ(), rightZ=facing.getModX();
+        int frames=0, occupied=0;
+        for(int row=0;row<4;row++) for(int col=0;col<4;col++){
+            int x=baseX+rightX*col, y=baseY+row, z=baseZ+rightZ*col;
+            Block support=world.getBlockAt(x-facing.getModX(),y,z-facing.getModZ());
+            if(support.getType().isAir() || support.isPassable()){ occupied++; continue; }
+            boolean existing=world.getNearbyEntities(new Location(world,x+0.5,y+0.5,z+0.5),0.35,0.35,0.35).stream().anyMatch(e->e instanceof org.bukkit.entity.ItemFrame);
+            if(existing){ occupied++; continue; }
+            frames++;
+            if(create){
+                final int tileX=col, tileY=3-row;
+                org.bukkit.entity.ItemFrame frame=world.spawn(new Location(world,x+0.5,y+0.5,z+0.5),org.bukkit.entity.ItemFrame.class, f->{
+                    f.setFacingDirection(facing,true);
+                    f.addScoreboardTag("clashercity_mapwall");
+                    f.setVisible(true);
+                    f.setFixed(true);
+                });
+                MapView view=Bukkit.createMap(world);
+                for(MapRenderer renderer:new ArrayList<>(view.getRenderers())) view.removeRenderer(renderer);
+                view.setScale(MapView.Scale.CLOSEST); view.setTrackingPosition(false);
+                view.addRenderer(new MapTileRenderer(tileX,tileY));
+                ItemStack map=new ItemStack(Material.FILLED_MAP);
+                MapMeta meta=(MapMeta)map.getItemMeta(); meta.setMapView(view);
+                meta.setDisplayName(color("&bClasherCity Atlas &7| &f"+(tileX+1)+"/4, "+(4-tileY)+"/4"));
+                map.setItemMeta(meta); frame.setItem(map);
+            }
+        }
+        if(create) player.sendMessage(msg("4x4 map wall created/updated: &f"+frames+"&a frames placed; &c"+occupied+"&a positions skipped (existing frame or missing support)."));
+        else player.sendMessage(msg("Map wall preview: &f"+frames+"&a valid frame positions; &c"+occupied+"&a positions need a solid support wall or are occupied."));
+    }
+
+    private void removeMapWall(Player player) {
+        String worldName=getConfig().getString("map-wall.world");
+        World world=worldName==null?null:Bukkit.getWorld(worldName);
+        if(world==null){ player.sendMessage(msg("Map wall world is not loaded.")); return; }
+        int removed=0;
+        for(org.bukkit.entity.Entity entity:world.getEntities()) if(entity instanceof org.bukkit.entity.ItemFrame && entity.getScoreboardTags().contains("clashercity_mapwall")) { entity.remove(); removed++; }
+        player.sendMessage(msg("Removed &f"+removed+"&a ClasherCity map wall frames. Other item frames were untouched."));
+    }
+
+    private final class MapTileRenderer extends MapRenderer {
+        private final int tileX, tileY;
+        private BufferedImage cached;
+        private long lastBuild;
+        MapTileRenderer(int tileX,int tileY){ super(false); this.tileX=tileX; this.tileY=tileY; }
+        @Override public void render(MapView view,MapCanvas canvas,Player player){
+            if(cached==null || System.currentTimeMillis()-lastBuild>5000){
+                BufferedImage full=buildMapImage();
+                cached=new BufferedImage(128,128,BufferedImage.TYPE_INT_RGB);
+                Graphics2D g=cached.createGraphics();
+                try { g.drawImage(full,0,0,128,128,tileX*32,tileY*32,(tileX+1)*32,(tileY+1)*32,null); }
+                finally { g.dispose(); }
+                lastBuild=System.currentTimeMillis();
+            }
+            canvas.drawImage(0,0,cached);
+        }
     }
 
     private final class MapViewRenderer extends MapRenderer {
