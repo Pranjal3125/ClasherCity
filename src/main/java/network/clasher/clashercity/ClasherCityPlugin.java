@@ -1028,20 +1028,53 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             Plot p = getPlot(id);
             if (p == null) { player.sendMessage(msg("Plot not found.")); return; }
             MenuHolder holder = new MenuHolder("PLOT_INFO", 0);
-            Inventory inv = holder.create(27, color("&8✦  PROPERTY DETAILS  &8•  &f" + p.id()));
-        frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
+            Inventory inv = holder.create(36, color("&8✦  PROPERTY PROFILE  &8•  &f" + p.id()));
+            frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
             boolean sold = p.ownerUuid() != null;
-            inv.setItem(13, menuItem(sold ? Material.RED_CONCRETE : Material.LIME_CONCRETE,
-                    (sold ? "&c" : "&a") + p.id(),
-                    List.of("&7Dimensions: &f" + (p.maxX() - p.minX() + 1) + " x " + (p.maxZ() - p.minZ() + 1),
-                            "&7Price: &e" + economy.format(p.price()), "&7Status: " + (sold ? "&cSold to " + p.ownerName() : "&aAvailable")), "info", p.id()));
-            if (!sold && phase() == Phase.REGISTRATION) inv.setItem(11, menuItem(Material.LIME_CONCRETE, "&aPurchase plot", List.of("&7Confirm in the next screen", "&7Price: &e" + economy.format(p.price())), "confirm", p.id()));
-            if (sold && phase() == Phase.REGISTRATION && p.ownerUuid().equals(player.getUniqueId().toString())) {
+            int sizeX = p.maxX() - p.minX() + 1;
+            int sizeZ = p.maxZ() - p.minZ() + 1;
+            inv.setItem(4, menuItem(sold ? Material.RED_CONCRETE : Material.LIME_CONCRETE,
+                    (sold ? "&c&l" : "&a&l") + "PLOT " + p.id(),
+                    List.of("&8CLASHERCITY PROPERTY RECORD", "",
+                            "&7Availability: " + (sold ? "&cPurchased" : "&aAvailable"),
+                            "&7Owner: &f" + (sold ? p.ownerName() : "Unclaimed"),
+                            "&7Market price: &e" + economy.format(p.price()),
+                            "&7Building phase: &f" + phase(),
+                            "", sold ? "&cThis property is not available for purchase." : "&aThis property is available."),
+                    "info", p.id()));
+            inv.setItem(11, menuItem(Material.MAP, "&b&lPROPERTY DIMENSIONS",
+                    List.of("&8LAND INFORMATION", "",
+                            "&7Footprint: &f" + sizeX + " x " + sizeZ + " blocks",
+                            "&7Total area: &f" + ((long) sizeX * sizeZ) + " blocks²",
+                            "&7World: &f" + p.world(),
+                            "&7Minimum corner: &f" + p.minX() + ", " + p.minZ(),
+                            "&7Maximum corner: &f" + p.maxX() + ", " + p.maxZ()),
+                    "info", p.id()));
+            inv.setItem(13, menuItem(Material.GOLD_INGOT, "&6&lPURCHASE INFORMATION",
+                    List.of("&8REAL ESTATE", "",
+                            "&7Listed price: &e" + economy.format(p.price()),
+                            "&7Status: " + (sold ? "&cSold" : "&aFor sale"),
+                            "&7Transaction: &fVault economy",
+                            "", sold ? "&cOwned by " + p.ownerName() : "&ePurchase is available during registration."),
+                    "info", p.id()));
+            if (!sold && phase() == Phase.REGISTRATION) {
+                inv.setItem(22, menuItem(Material.LIME_CONCRETE, "&a&lPURCHASE PROPERTY",
+                        List.of("&7Acquire plot " + p.id() + ".", "&7Price: &e" + economy.format(p.price()),
+                                "", "&e➜ Continue to purchase confirmation"), "confirm", p.id()));
+            } else if (sold && p.ownerUuid().equals(player.getUniqueId().toString()) && phase() == Phase.REGISTRATION) {
                 boolean entered = isTournamentEntry(p.id());
-                inv.setItem(11, menuItem(entered ? Material.LIME_DYE : Material.WRITABLE_BOOK,
-                        entered ? "&aAlready entered" : "&eEnter this plot", List.of("&7Register your owned plot for this tournament"), entered ? "none" : "enter", p.id()));
+                inv.setItem(22, menuItem(entered ? Material.LIME_DYE : Material.WRITABLE_BOOK,
+                        entered ? "&a&lCHAMPIONSHIP REGISTERED" : "&e&lENTER CHAMPIONSHIP",
+                        List.of("&7Register your property in the current build event.",
+                                "", entered ? "&aThis plot is already entered." : "&e➜ Register this plot"),
+                        entered ? "none" : "enter", p.id()));
+            } else {
+                inv.setItem(22, menuItem(Material.BARRIER, "&c&lNO ACTION AVAILABLE",
+                        List.of("&7Purchases and registration depend on", "&7the current tournament phase: &f" + phase()),
+                        "info", p.id()));
             }
-            inv.setItem(15, menuItem(Material.ARROW, "&eBack to plots", List.of(), "plots", null));
+            inv.setItem(30, menuItem(Material.ARROW, "&fBack to marketplace", List.of("&7Return to property listings."), "plots", null));
+            inv.setItem(32, menuItem(Material.BARRIER, "&cClose", List.of("&7Close property details."), "close", null));
             player.openInventory(inv);
         } catch (SQLException ex) { player.sendMessage(msg("Database error.")); }
     }
@@ -1049,17 +1082,41 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     private void openMapMenu(Player player, int page) {
         List<Plot> plots;
         try { plots = getPlots(); } catch (SQLException ex) { player.sendMessage(msg("Could not load map.")); return; }
+        int perPage = 28;
+        int maxPage = Math.max(0, (plots.size() - 1) / perPage);
+        page = Math.max(0, Math.min(page, maxPage));
         MenuHolder holder = new MenuHolder("MAP", page);
         Inventory inv = holder.create(54, color("&8✦  CLASHERCITY  &8•  &3CITY ATLAS"));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
-        inv.setItem(4, menuItem(Material.FILLED_MAP, "&bCity overview", List.of("&7Green = available", "&7Red = purchased", "&7Grey = roads", "&7Blue = public area"), "none", null));
-        for (int i = 0; i < Math.min(45, plots.size()); i++) {
-            Plot p = plots.get(i);
-            boolean sold = p.ownerUuid() != null;
-            inv.setItem(i + 9, menuItem(sold ? Material.RED_STAINED_GLASS_PANE : Material.LIME_STAINED_GLASS_PANE,
-                    (sold ? "&c" : "&a") + p.id(), List.of("&7Price: &e" + economy.format(p.price()), sold ? "&7Owner: &f" + p.ownerName() : "&aAvailable"), "plot_info", p.id()));
+        long available = plots.stream().filter(p -> p.ownerUuid() == null).count();
+        long sold = plots.size() - available;
+        inv.setItem(4, menuItem(Material.FILLED_MAP, "&b&lCITY ATLAS",
+                List.of("&8DISTRICT PROPERTY INDEX", "",
+                        "&7Registered plots: &f" + plots.size(),
+                        "&7Available properties: &a" + available,
+                        "&7Purchased properties: &c" + sold,
+                        "", "&8Colour key", "&a■ &7Available   &c■ &7Purchased",
+                        "&8Select a plot to open its property profile."),
+                "none", null));
+        int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
+        int start = page * perPage;
+        for (int i = 0; i < slots.length && start + i < plots.size(); i++) {
+            Plot p = plots.get(start + i);
+            boolean isSold = p.ownerUuid() != null;
+            inv.setItem(slots[i], menuItem(isSold ? Material.RED_STAINED_GLASS_PANE : Material.LIME_STAINED_GLASS_PANE,
+                    (isSold ? "&c" : "&a") + "&l" + p.id(),
+                    List.of("&8ATLAS PROPERTY MARKER", "",
+                            "&7Status: " + (isSold ? "&cPurchased" : "&aAvailable"),
+                            "&7Price: &e" + economy.format(p.price()),
+                            isSold ? "&7Owner: &f" + p.ownerName() : "&7Owner: &fUnclaimed",
+                            "", "&e➜ Open property profile"),
+                    "plot_info", p.id()));
         }
-        inv.setItem(49, menuItem(Material.PAPER, "&ePhysical map item", List.of("&7Ask an admin to use /clcity mapitem"), "none", null));
+        if (plots.isEmpty()) inv.setItem(22, menuItem(Material.BARRIER, "&cNo registered plots", List.of("&7No property markers are available yet."), "none", null));
+        if (page > 0) inv.setItem(48, menuItem(Material.ARROW, "&fPrevious page", List.of("&7Page " + page), "map_prev", null));
+        inv.setItem(49, menuItem(Material.PAPER, "&ePhysical map item", List.of("&7Admins can issue the in-game map", "&7with /clcity mapitem."), "none", null));
+        inv.setItem(50, menuItem(Material.BARRIER, "&cClose", List.of("&7Close the city atlas."), "close", null));
+        if (page < maxPage) inv.setItem(52, menuItem(Material.ARROW, "&fNext page", List.of("&7Page " + (page + 2)), "map_next", null));
         player.openInventory(inv);
     }
 
