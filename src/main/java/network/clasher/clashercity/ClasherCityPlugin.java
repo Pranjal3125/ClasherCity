@@ -458,6 +458,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity createroad <id>"); break; }
                     createAreaFromSelection(p, args[1], "ROAD");
                 }
+                case "border" -> {
+                    if (!(sender instanceof Player p) || args.length < 3) { sender.sendMessage("Usage: /clcity border <plot-id> <preview|create>"); break; }
+                    if (!args[2].equalsIgnoreCase("preview") && !args[2].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity border <plot-id> <preview|create>"); break; }
+                    buildPlotBorder(p, args[1], args[2].equalsIgnoreCase("create"));
+                }
                 case "createpublic" -> {
                     if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity createpublic <id>"); break; }
                     createAreaFromSelection(p, args[1], "PUBLIC");
@@ -520,6 +525,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity wand &7- Get selection wand"));
         sender.sendMessage(color("&e/clcity createplot <id> <price> &7- Register a plot"));
         sender.sendMessage(color("&e/clcity createroad <id> &7- Protect a road selection"));
+        sender.sendMessage(color("&e/clcity border <plot-id> <preview|create> &7- Preview/build a safe plot border"));
         sender.sendMessage(color("&e/clcity createpublic <id> &7- Protect public area"));
         sender.sendMessage(color("&e/clcity setprice <id> <price> &7- Change plot price"));
         sender.sendMessage(color("&e/clcity deleteplot <id> confirm &7- Delete an unowned plot"));
@@ -605,6 +611,43 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         }
         mapRenderer.invalidate();
         player.sendMessage(msg(type + " area &e" + id + "&a created and protected."));
+    }
+
+    private void buildPlotBorder(Player player, String plotId, boolean create) throws SQLException {
+        if (cityWorld == null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
+        Plot plot = getPlot(plotId);
+        if (plot == null) throw new IllegalArgumentException("Plot not found: " + plotId);
+        int height = Math.max(2, Math.min(5, getConfig().getInt("plot-border.height", 3)));
+        int entranceWidth = Math.max(1, Math.min(7, getConfig().getInt("plot-border.entrance-width", 3)));
+        int entranceStart = (plot.minX() + plot.maxX() - entranceWidth + 1) / 2;
+        int entranceEnd = entranceStart + entranceWidth - 1;
+        int eligible = 0, skipped = 0, changed = 0;
+        for (int x = plot.minX(); x <= plot.maxX(); x++) {
+            for (int z = plot.minZ(); z <= plot.maxZ(); z++) {
+                boolean edge = x == plot.minX() || x == plot.maxX() || z == plot.minZ() || z == plot.maxZ();
+                if (!edge) continue;
+                boolean corner = (x == plot.minX() || x == plot.maxX()) && (z == plot.minZ() || z == plot.maxZ());
+                boolean entrance = z == plot.maxZ() && x >= entranceStart && x <= entranceEnd && !corner;
+                if (entrance) continue;
+                int groundY = cityWorld.getHighestBlockYAt(x, z);
+                for (int dy = 1; dy <= height; dy++) {
+                    Material material = corner ? Material.STONE_BRICKS : (dy == 1 ? Material.STONE_BRICK_WALL : Material.IRON_BARS);
+                    if (!corner && dy == height) material = Material.STONE_BRICK_WALL;
+                    var block = cityWorld.getBlockAt(x, groundY + dy, z);
+                    if (block.getType() == Material.AIR || block.isPassable()) eligible++;
+                    else skipped++;
+                    if (create && (block.getType() == Material.AIR || block.isPassable())) {
+                        block.setType(material, false);
+                        changed++;
+                    }
+                }
+            }
+        }
+        if (!create) {
+            player.sendMessage(msg("Border preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks can be placed, &c" + skipped + " &awill be skipped. Entrance: &f" + entranceWidth + " blocks."));
+        } else {
+            player.sendMessage(msg("Border built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks."));
+        }
     }
 
     private void validateId(String id) {

@@ -50,3 +50,8 @@ rewards:
 
 messages:
   prefix: '&8[&6ClasherCity&8] '
+
+# Decorative plot perimeter generation. Existing non-passable blocks are never overwritten.
+plot-border:
+  height: 3
+  entrance-width: 3
