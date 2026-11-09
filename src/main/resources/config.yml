@@ -15,6 +15,7 @@ plots:
   allow-multiple: true
   max-per-player: 2
   refund-on-abandon: false
+  notify-owner-on-visit: true
   gui-title: '&8ClasherCity | Plots'
 
 protection:
