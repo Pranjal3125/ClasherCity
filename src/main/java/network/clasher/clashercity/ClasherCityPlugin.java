@@ -954,7 +954,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     "&7Owner: &f"+(plot.ownerName()==null?"None":plot.ownerName()));
             Object hologram=api.getMethod("getHologram",String.class).invoke(null,name);
             if(hologram==null) api.getMethod("createHologram",String.class,Location.class,boolean.class,List.class).invoke(null,name,location,true,lines);
-            else api.getMethod("setHologramLines",hologram.getClass().getInterfaces().length>0?hologram.getClass().getInterfaces()[0]:hologram.getClass(),List.class).invoke(null,hologram,lines);
+            else {
+                java.lang.reflect.Method setter=Arrays.stream(api.getMethods()).filter(m->m.getName().equals("setHologramLines") && m.getParameterCount()==2 && m.getParameterTypes()[0].isInstance(hologram) && List.class.isAssignableFrom(m.getParameterTypes()[1])).findFirst().orElseThrow();
+                setter.invoke(null,hologram,lines);
+            }
         } catch(Exception ex){ getLogger().warning("DecentHolograms integration failed for plot "+plot.id()+": "+ex.getMessage()); }
     }
 
