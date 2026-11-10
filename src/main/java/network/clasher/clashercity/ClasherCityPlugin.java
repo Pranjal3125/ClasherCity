@@ -2482,7 +2482,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 case "open_help" -> openHelpMenu(player);
                 case "help_home" -> openMainMenu(player);
                 case "help_back" -> openHelpMenu(player);
-                case "help_back" -> openHelpMenu(player);
                 case "help_0","help_1","help_2","help_3","help_4","help_5","help_6","help_7","help_8","help_9","help_10" -> showHelpTopic(player,Integer.parseInt(action.substring(5)));
                 case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
                 case "plots" -> openPlotMenu(player, 0);
