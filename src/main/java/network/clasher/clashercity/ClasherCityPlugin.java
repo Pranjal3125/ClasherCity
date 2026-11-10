@@ -724,7 +724,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         if (cityWorld == null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
         Plot plot = getPlot(plotId);
         if (plot == null) throw new IllegalArgumentException("Plot not found: " + plotId);
-        int height = Math.max(2, Math.min(5, getConfig().getInt("plot-border.height", 3)));
+        int height = Math.max(3, Math.min(5, getConfig().getInt("plot-border.height", 3)));
         int entranceWidth = Math.max(1, Math.min(7, getConfig().getInt("plot-border.entrance-width", 3)));
         int entranceStart = (plot.minX() + plot.maxX() - entranceWidth + 1) / 2;
         int entranceEnd = entranceStart + entranceWidth - 1;
@@ -739,9 +739,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 boolean entrance = z == plot.maxZ() && x >= entranceStart && x <= entranceEnd && !corner;
                 if (entrance) continue;
                 int groundY = cityWorld.getHighestBlockYAt(x, z);
+                boolean pillar = corner || (x % 6 == 0 && (z == plot.minZ() || z == plot.maxZ()))
+                        || (z % 6 == 0 && (x == plot.minX() || x == plot.maxX()));
                 for (int dy = 1; dy <= height; dy++) {
-                    Material material = corner ? Material.STONE_BRICKS : (dy == 1 ? Material.STONE_BRICK_WALL : Material.IRON_BARS);
-                    if (!corner && dy == height) material = Material.STONE_BRICK_WALL;
+                    Material material;
+                    if (pillar) {
+                        material = dy == 1 ? Material.POLISHED_BLACKSTONE_BRICKS
+                                : (dy == height ? Material.CHISELED_QUARTZ_BLOCK : Material.SMOOTH_QUARTZ);
+                    } else {
+                        material = dy == 1 ? Material.POLISHED_BLACKSTONE_BRICK_WALL
+                                : (dy == 2 ? Material.GLASS_PANE : Material.SMOOTH_QUARTZ_SLAB);
+                    }
                     var block = cityWorld.getBlockAt(x, groundY + dy, z);
                     if (block.getType() == Material.AIR || block.isPassable()) eligible++;
                     else skipped++;
@@ -750,13 +758,20 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                         changed++;
                     }
                 }
+                if (pillar) {
+                    var accent = cityWorld.getBlockAt(x, groundY + height + 1, z);
+                    if (accent.getType() == Material.AIR || accent.isPassable()) {
+                        eligible++;
+                        if (create) { placeGeneratedBlock(changes,accent,Material.SEA_LANTERN); changed++; }
+                    } else skipped++;
+                }
             }
         }
         if (!create) {
-            player.sendMessage(msg("Border preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks can be placed, &c" + skipped + " &awill be skipped. Entrance: &f" + entranceWidth + " blocks."));
+            player.sendMessage(msg("Luxury quartz-and-blackstone boundary preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks available, &c" + skipped + " &aoccupied. Entrance: &f" + entranceWidth + " blocks."));
         } else {
             persistWorldgenOperation(operationId,player,"PLOT_BORDER",changes);
-            player.sendMessage(msg("Border built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks. Undo ID: &e"+operationId));
+            player.sendMessage(msg("Luxury boundary built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks. Undo ID: &e"+operationId));
         }
     }
 
@@ -839,12 +854,20 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     int z = alongX ? area.minZ() + side : area.minZ() + along;
                     int baseY = cityWorld.getHighestBlockYAt(x, z) + 1;
                     boolean clear = true;
-                    for (int dy = 0; dy < 4; dy++) if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
+                    for (int dy = 0; dy <= 5; dy++) if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
                     lampCandidates++;
                     if (create && clear) {
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY,z),Material.STONE_BRICK_WALL);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+1,z),Material.STONE_BRICK_WALL);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+2,z),Material.LANTERN);
+                        // Luxury lamp: blackstone plinth, quartz column, projecting crown and warm lantern.
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY,z),Material.POLISHED_BLACKSTONE_BRICKS);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+1,z),Material.QUARTZ_PILLAR);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+2,z),Material.QUARTZ_PILLAR);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+3,z),Material.QUARTZ_PILLAR);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+4,z),Material.SMOOTH_QUARTZ_SLAB);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+5,z),Material.SEA_LANTERN);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+4,z),Material.SMOOTH_QUARTZ_SLAB);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+4,z),Material.SMOOTH_QUARTZ_SLAB);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+5,z),Material.LANTERN);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+5,z),Material.LANTERN);
                         lampsPlaced++;
                     }
                 }

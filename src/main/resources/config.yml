@@ -56,12 +56,15 @@ messages:
 plot-border:
   height: 3
   entrance-width: 3
+  style: luxury-quartz-blackstone
+  pillar-spacing: 6
 
 # Road generator: large areas are rejected to avoid long server-thread stalls.
 road-builder:
   max-area-blocks: 30000
   sidewalk-width: 2
   streetlight-spacing: 12
+  streetlight-style: luxury-quartz-lantern
 
 # Park builder safety limit.
 park-builder:
