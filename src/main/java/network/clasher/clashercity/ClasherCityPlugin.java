@@ -15,6 +15,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Statistic;
 import org.bukkit.World;
@@ -84,6 +87,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     private NamespacedKey keyWand;
     private final Map<UUID, Location[]> selections = new HashMap<>();
     private final Map<UUID, Long> lastGuiAction = new HashMap<>();
+    private final Map<UUID, BukkitTask> plotOutlineTasks = new HashMap<>();
     private final MapViewRenderer mapRenderer = new MapViewRenderer();
 
     private enum Phase { SETUP, REGISTRATION, BUILDING, VOTING, RESULTS }
@@ -138,6 +142,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        for (BukkitTask task : plotOutlineTasks.values()) task.cancel();
+        plotOutlineTasks.clear();
         try {
             if (db != null && !db.isClosed()) db.close();
         } catch (SQLException ex) {
@@ -418,6 +424,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 else enterPlot(player, args[1]);
             }
             case "home" -> teleportHome(player, args.length >= 2 ? args[1] : null);
+            case "outline" -> {
+                if (args.length >= 2 && args[1].equalsIgnoreCase("off")) clearOwnerPlotVisuals(player);
+                else showOwnedPlotOutline(player, null);
+            }
             case "visit" -> {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot visit <player>"));
                 else visitPlayerPlot(player, args[1]);
@@ -520,6 +530,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                         ps.setDouble(1, price); ps.setString(2, args[1]);
                         sender.sendMessage(msg(ps.executeUpdate() == 1 ? "Price updated." : "Plot not found."));
                     }
+                }
+                case "ghostcorners" -> {
+                    if (args.length < 2 || !List.of("on","off","status").contains(args[1].toLowerCase(Locale.ROOT))) { sender.sendMessage(msg("Usage: /clcity ghostcorners <on|off|status>")); break; }
+                    if (args[1].equalsIgnoreCase("status")) sender.sendMessage(msg("Owner ghost corner blocks: " + (getConfig().getBoolean("plot-visuals.ghost-corners-enabled",true) ? "&aON" : "&cOFF")));
+                    else { getConfig().set("plot-visuals.ghost-corners-enabled",args[1].equalsIgnoreCase("on")); saveConfig(); sender.sendMessage(msg("Owner ghost corner blocks are now " + (args[1].equalsIgnoreCase("on") ? "&aON" : "&cOFF") + "&a.")); }
                 }
                 case "resetplotsroads" -> {
                     if (args.length < 2 || !args[1].equalsIgnoreCase("confirm")) {
@@ -630,7 +645,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(color("&e/clcity wand &7- Get selection wand"));
         sender.sendMessage(color("&e/clcity createplot <id> <price> &7- Register a plot"));
         sender.sendMessage(color("&e/clcity createroad <id> &7- Protect a road selection"));
-        sender.sendMessage(color("&e/clcity border <plot-id> <preview|create> &7- Preview/build a safe plot border"));
+        sender.sendMessage(color("&e/clcity border <plot-id> <preview|create> &7- Build the checkerboard plot perimeter"));
+        sender.sendMessage(color("&e/clcity ghostcorners <on|off|status> &7- Toggle owner-only ghost corner blocks"));
         sender.sendMessage(color("&e/clcity createpublic <id> &7- Protect public area"));
         sender.sendMessage(color("&e/clcity roadbuild <id> <preview|create> &7- Preview/build a modern road"));
         sender.sendMessage(color("&e/clcity parkbuild <id> <preview|create> &7- Preview/build a public park"));
@@ -732,51 +748,35 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         if (cityWorld == null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
         Plot plot = getPlot(plotId);
         if (plot == null) throw new IllegalArgumentException("Plot not found: " + plotId);
-        int height = Math.max(3, Math.min(5, getConfig().getInt("plot-border.height", 3)));
-        int entranceWidth = Math.max(1, Math.min(7, getConfig().getInt("plot-border.entrance-width", 3)));
-        int entranceStart = (plot.minX() + plot.maxX() - entranceWidth + 1) / 2;
-        int entranceEnd = entranceStart + entranceWidth - 1;
         int eligible = 0, skipped = 0, changed = 0;
-        String operationId=UUID.randomUUID().toString().substring(0,8);
-        List<String[]> changes=new ArrayList<>();
+        String operationId = UUID.randomUUID().toString().substring(0,8);
+        List<String[]> changes = new ArrayList<>();
+        // Match the supplied 25x25 reference: a single-block, closed checkerboard perimeter.
+        // The same perimeter pattern scales to every rectangular plot size.
         for (int x = plot.minX(); x <= plot.maxX(); x++) {
             for (int z = plot.minZ(); z <= plot.maxZ(); z++) {
                 boolean edge = x == plot.minX() || x == plot.maxX() || z == plot.minZ() || z == plot.maxZ();
                 if (!edge) continue;
-                boolean corner = (x == plot.minX() || x == plot.maxX()) && (z == plot.minZ() || z == plot.maxZ());
-                boolean entrance = z == plot.maxZ() && x >= entranceStart && x <= entranceEnd && !corner;
-                if (entrance) continue;
-                int groundY = cityWorld.getHighestBlockYAt(x, z);
-                boolean pillar = corner || (x % 6 == 0 && (z == plot.minZ() || z == plot.maxZ()))
-                        || (z % 6 == 0 && (x == plot.minX() || x == plot.maxX()));
-                for (int dy = 1; dy <= height; dy++) {
-                    // Full blocks are used throughout so every fence section visually joins its neighbours.
-                    Material material = dy == 1 ? Material.POLISHED_BLACKSTONE_BRICKS
-                            : (pillar ? (dy == height ? Material.CHISELED_QUARTZ_BLOCK : Material.SMOOTH_QUARTZ)
-                            : Material.GLASS);
-                    var block = cityWorld.getBlockAt(x, groundY + dy, z);
-                    boolean clear = block.getType().isAir() || block.isPassable();
-                    if (clear) eligible++; else skipped++;
-                    if (create && clear) {
-                        placeGeneratedBlock(changes,block,material);
+                int y = cityWorld.getHighestBlockYAt(x,z) + 1;
+                Block block = cityWorld.getBlockAt(x,y,z);
+                boolean clear = block.getType().isAir() || block.isPassable();
+                if (clear) {
+                    eligible++;
+                    if (create) {
+                        int parity = Math.floorMod((x - plot.minX()) + (z - plot.minZ()), 2);
+                        placeGeneratedBlock(changes, block, parity == 0 ? Material.WHITE_CONCRETE : Material.BLACK_CONCRETE);
                         changed++;
                     }
-                }
-                if (pillar) {
-                    var cap = cityWorld.getBlockAt(x, groundY + height + 1, z);
-                    boolean clear = cap.getType().isAir() || cap.isPassable();
-                    if (clear) {
-                        eligible++;
-                        if (create) { placeGeneratedBlock(changes,cap,Material.SEA_LANTERN); changed++; }
-                    } else skipped++;
-                }
+                } else skipped++;
             }
         }
-        if (!create) {
-            player.sendMessage(msg("Connected luxury boundary preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks available, &c" + skipped + " &aoccupied. Full-block glass panels, continuous blackstone base and quartz pillars. Entrance: &f" + entranceWidth + " blocks."));
-        } else {
+        if (create) {
             persistWorldgenOperation(operationId,player,"PLOT_BORDER",changes);
-            player.sendMessage(msg("Connected luxury boundary built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks. Undo ID: &e"+operationId));
+            player.sendMessage(msg("Reference checkerboard plot outline built for &e" + plot.id() + "&a (" +
+                    (plot.maxX()-plot.minX()+1) + "x" + (plot.maxZ()-plot.minZ()+1) +
+                    "). Placed &f" + changed + "&a blocks; occupied blocks skipped: &c" + skipped + "&a. Undo ID: &e" + operationId));
+        } else {
+            player.sendMessage(msg("Plot outline preview &e" + plot.id() + "&a: &f" + eligible + "&a perimeter blocks available; &c" + skipped + "&a occupied."));
         }
     }
 
@@ -822,72 +822,67 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         if (cityWorld == null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("You must be in the city world.");
         Area area = getAreas().stream().filter(a -> a.type().equalsIgnoreCase("ROAD") && a.id().equalsIgnoreCase(roadId)).findFirst().orElse(null);
         if (area == null) throw new IllegalArgumentException("Protected road area not found: " + roadId);
-        long areaSize = (long) (area.maxX() - area.minX() + 1) * (area.maxZ() - area.minZ() + 1);
-        long maxBlocks = getConfig().getLong("road-builder.max-area-blocks", 30000L);
-        if (areaSize > maxBlocks) throw new IllegalArgumentException("Road area is " + areaSize + " blocks; configured safety limit is " + maxBlocks + ".");
-        boolean alongX = (area.maxX() - area.minX()) >= (area.maxZ() - area.minZ());
-        int length = alongX ? area.maxX() - area.minX() + 1 : area.maxZ() - area.minZ() + 1;
-        int width = alongX ? area.maxZ() - area.minZ() + 1 : area.maxX() - area.minX() + 1;
-        if (width < 7) throw new IllegalArgumentException("Road selection must be at least 7 blocks wide to fit asphalt, lane markings and sidewalks.");
-        int sidewalkWidth = Math.max(1, Math.min(2, getConfig().getInt("road-builder.sidewalk-width", 2)));
-        int lampSpacing = Math.max(6, getConfig().getInt("road-builder.streetlight-spacing", 12));
-        int center = width / 2;
-        int eligible = 0, skipped = 0, changed = 0;
+        long areaSize = (long)(area.maxX()-area.minX()+1)*(area.maxZ()-area.minZ()+1);
+        long maxBlocks = getConfig().getLong("road-builder.max-area-blocks",30000L);
+        if (areaSize > maxBlocks) throw new IllegalArgumentException("Road area exceeds configured safety limit of " + maxBlocks + " blocks.");
+        boolean alongX = (area.maxX()-area.minX()) >= (area.maxZ()-area.minZ());
+        int length = alongX ? area.maxX()-area.minX()+1 : area.maxZ()-area.minZ()+1;
+        int width = alongX ? area.maxZ()-area.minZ()+1 : area.maxX()-area.minX()+1;
+        if (width < 9) throw new IllegalArgumentException("Reference road needs at least 9 blocks width: 2 sidewalk + 1 edge strip + 3 asphalt + 1 edge strip + 2 sidewalk.");
+        int center = width/2;
+        int lampSpacing = Math.max(8,getConfig().getInt("road-builder.streetlight-spacing",16));
+        int eligible=0, skipped=0, changed=0, lampsPlaced=0, lampCandidates=0;
         String operationId=UUID.randomUUID().toString().substring(0,8);
         List<String[]> changes=new ArrayList<>();
-        for (int along = 0; along < length; along++) {
-            for (int across = 0; across < width; across++) {
-                int x = alongX ? area.minX() + along : area.minX() + across;
-                int z = alongX ? area.minZ() + across : area.minZ() + along;
-                boolean sidewalk = across < sidewalkWidth || across >= width - sidewalkWidth;
-                boolean curb = across == sidewalkWidth || across == width - sidewalkWidth - 1;
-                boolean laneMark = across == center && (along % 8 < 4);
-                Material surface = sidewalk ? Material.LIGHT_GRAY_CONCRETE : (curb ? Material.GRAY_CONCRETE : (laneMark ? Material.WHITE_CONCRETE : Material.BLACK_CONCRETE));
-                int y = cityWorld.getHighestBlockYAt(x, z) + 1;
-                var block = cityWorld.getBlockAt(x, y, z);
-                if (block.getType() == Material.AIR || block.isPassable()) {
-                    eligible++;
-                    if (create) { placeGeneratedBlock(changes,block,surface); changed++; }
-                } else skipped++;
+        for(int along=0;along<length;along++){
+            for(int across=0;across<width;across++){
+                int x=alongX?area.minX()+along:area.minX()+across;
+                int z=alongX?area.minZ()+across:area.minZ()+along;
+                Material surface;
+                if(across<2 || across>=width-2) surface=Material.LIGHT_GRAY_CONCRETE;
+                else if(across==2 || across==width-3) surface=Material.GRAY_CONCRETE;
+                else if(across==center && (along%10<5)) surface=Material.WHITE_CONCRETE;
+                else surface=Material.BLACK_CONCRETE;
+                int y=cityWorld.getHighestBlockYAt(x,z)+1;
+                Block block=cityWorld.getBlockAt(x,y,z);
+                boolean clear=block.getType().isAir()||block.isPassable();
+                if(clear){eligible++;if(create){placeGeneratedBlock(changes,block,surface);changed++;}}
+                else skipped++;
             }
         }
-        int lampCandidates = 0, lampsPlaced = 0;
-        if (width >= 9) {
-            for (int along = 0; along < length; along += lampSpacing) {
-                for (int side : new int[]{sidewalkWidth - 1, width - sidewalkWidth}) {
-                    int x = alongX ? area.minX() + along : area.minX() + side;
-                    int z = alongX ? area.minZ() + side : area.minZ() + along;
-                    int baseY = cityWorld.getHighestBlockYAt(x, z) + 1;
-                    // Check the complete 3-wide lamp footprint before placing any part of it.
-                    boolean clear = true;
-                    for (int dy = 0; dy <= 5; dy++) {
-                        if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
-                    }
-                    for (int sideOffset : new int[]{-1, 1}) {
-                        if (!cityWorld.getBlockAt(x + sideOffset, baseY + 4, z).isPassable()
-                                || !cityWorld.getBlockAt(x + sideOffset, baseY + 5, z).isPassable()) clear = false;
-                    }
-                    lampCandidates++;
-                    if (create && clear) {
-                        // Connected luxury lamp: solid plinth and quartz shaft, full-block crossarm,
-                        // central sea-lantern crown and warm lanterns suspended at both ends.
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY,z),Material.POLISHED_BLACKSTONE_BRICKS);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+1,z),Material.QUARTZ_PILLAR);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+2,z),Material.QUARTZ_PILLAR);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+3,z),Material.QUARTZ_PILLAR);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+4,z),Material.SMOOTH_QUARTZ);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+4,z),Material.SMOOTH_QUARTZ);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+4,z),Material.SMOOTH_QUARTZ);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+5,z),Material.SEA_LANTERN);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+5,z),Material.LANTERN);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+5,z),Material.LANTERN);
-                        lampsPlaced++;
-                    }
+        // Screenshot-matched double-arm deepslate lamps, placed on one sidewalk at regular intervals.
+        // Arms span across the road; each side steps down toward a warm froglight.
+        for(int along=lampSpacing/2;along<length;along+=lampSpacing){
+            int across=1;
+            int x=alongX?area.minX()+along:area.minX()+across;
+            int z=alongX?area.minZ()+across:area.minZ()+along;
+            int baseY=cityWorld.getHighestBlockYAt(x,z)+1;
+            boolean clear=true;
+            for(int dy=0;dy<=8;dy++) if(!cityWorld.getBlockAt(x,baseY+dy,z).isPassable()) clear=false;
+            for(int offset=-3;offset<=3;offset++){
+                int ax=alongX?x:x+offset;
+                int az=alongX?z+offset:z;
+                if(offset!=0 && !cityWorld.getBlockAt(ax,baseY+8-Math.abs(offset),az).isPassable()) clear=false;
+            }
+            lampCandidates++;
+            if(create && clear){
+                placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY,z),Material.DEEPSLATE_BRICKS);
+                for(int dy=1;dy<=6;dy++) placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+dy,z),Material.DEEPSLATE_BRICK_WALL);
+                for(int offset=-3;offset<=3;offset++){
+                    int ax=alongX?x:x+offset;
+                    int az=alongX?z+offset:z;
+                    int y=baseY+8-Math.abs(offset);
+                    Material arm=(Math.abs(offset)==3)?Material.OCHRE_FROGLIGHT:Material.DEEPSLATE_BRICK_STAIRS;
+                    placeGeneratedBlock(changes,cityWorld.getBlockAt(ax,y,az),arm);
+                    if(Math.abs(offset)==2) placeGeneratedBlock(changes,cityWorld.getBlockAt(ax,y-1,az),Material.DEEPSLATE_BRICKS);
                 }
+                lampsPlaced++;
             }
         }
-        if (create) { persistWorldgenOperation(operationId,player,"ROAD",changes); player.sendMessage(msg("Road &e" + roadId + "&a generated: &f" + changed + "&a surface blocks, &f" + lampsPlaced + "&a streetlights; &c" + skipped + "&a occupied surface blocks skipped. Undo ID: &e"+operationId)); }
-        else player.sendMessage(msg("Road preview &e" + roadId + "&a: &f" + eligible + "&a surface blocks available, &c" + skipped + "&a occupied; &f" + lampCandidates + "&a streetlight positions checked."));
+        if(create){
+            persistWorldgenOperation(operationId,player,"ROAD",changes);
+            player.sendMessage(msg("Reference road &e"+roadId+"&a generated: &f"+changed+"&a surface blocks, &f"+lampsPlaced+"&a double-arm deepslate lamps; occupied blocks skipped: &c"+skipped+"&a. Undo ID: &e"+operationId));
+        }else player.sendMessage(msg("Reference road preview &e"+roadId+"&a: &f"+eligible+"&a surface blocks available, &c"+skipped+"&a occupied; &f"+lampCandidates+"&a lamp positions."));
     }
 
     private void buildCityEntrance(Player player,boolean create) {
@@ -1657,6 +1652,72 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         catch (IllegalArgumentException ex) { visitor.sendMessage(msg("The plot owner record is invalid. Contact staff.")); }
     }
 
+    private void clearOwnerPlotVisuals(Player player) {
+        BukkitTask task=plotOutlineTasks.remove(player.getUniqueId());
+        if(task!=null) task.cancel();
+    }
+
+    private void showOwnedPlotOutline(Player player, Plot plot) {
+        try {
+            if(plot==null){
+                try(PreparedStatement ps=db.prepareStatement("SELECT * FROM plots WHERE owner_uuid=? ORDER BY id LIMIT 1")){
+                    ps.setString(1,player.getUniqueId().toString());
+                    try(ResultSet rs=ps.executeQuery()){
+                        if(!rs.next()){player.sendMessage(msg("You do not own a city plot."));return;}
+                        plot=new Plot(rs.getString("id"),rs.getString("world"),rs.getInt("min_x"),rs.getInt("min_z"),rs.getInt("max_x"),rs.getInt("max_z"),rs.getDouble("price"),rs.getString("owner_uuid"),rs.getString("owner_name"));
+                    }
+                }
+            }
+            if(plot.ownerUuid()==null || !plot.ownerUuid().equals(player.getUniqueId().toString())) return;
+            World world=Bukkit.getWorld(plot.world()); if(world==null)return;
+            clearOwnerPlotVisuals(player);
+            final Plot selected=plot;
+            final int minY=Math.min(world.getHighestBlockYAt(plot.minX(),plot.minZ()),world.getHighestBlockYAt(plot.maxX(),plot.maxZ()))+1;
+            final int y=minY;
+            BukkitTask task=new BukkitRunnable(){
+                int ticks=0;
+                @Override public void run(){
+                    if(!player.isOnline() || !player.getWorld().equals(world) || ticks>=150){cancel();plotOutlineTasks.remove(player.getUniqueId());return;}
+                    Particle particle=Particle.END_ROD;
+                    for(int x=selected.minX();x<=selected.maxX();x++){
+                        player.spawnParticle(particle,new Location(world,x+0.5,y+0.15,selected.minZ()+0.5),1,0,0,0,0);
+                        player.spawnParticle(particle,new Location(world,x+0.5,y+0.15,selected.maxZ()+0.5),1,0,0,0,0);
+                    }
+                    for(int z=selected.minZ();z<=selected.maxZ();z++){
+                        player.spawnParticle(particle,new Location(world,selected.minX()+0.5,y+0.15,z+0.5),1,0,0,0,0);
+                        player.spawnParticle(particle,new Location(world,selected.maxX()+0.5,y+0.15,z+0.5),1,0,0,0,0);
+                    }
+                    ticks+=5;
+                }
+            }.runTaskTimer(this,0L,5L);
+            plotOutlineTasks.put(player.getUniqueId(),task);
+            if(getConfig().getBoolean("plot-visuals.ghost-corners-enabled",true)) showGhostCorners(player,selected,world);
+            player.sendMessage(msg("Your plot boundary is highlighted for 15 seconds."));
+        }catch(Exception ex){player.sendMessage(msg("Could not display your plot outline."));getLogger().warning("Plot outline error: "+ex.getMessage());}
+    }
+
+    private void showGhostCorners(Player player, Plot plot, World world) {
+        List<Location> locations=new ArrayList<>();
+        int[][] corners={{plot.minX(),plot.minZ()},{plot.minX(),plot.maxZ()},{plot.maxX(),plot.minZ()},{plot.maxX(),plot.maxZ()}};
+        Map<Location,org.bukkit.block.data.BlockData> originals=new HashMap<>();
+        for(int[] corner:corners){
+            int x=corner[0],z=corner[1],y=world.getHighestBlockYAt(x,z)+1;
+            Location loc=new Location(world,x,y,z);
+            originals.put(loc,world.getBlockAt(x,y,z).getBlockData());
+            player.sendBlockChange(loc,Bukkit.createBlockData(Material.SEA_LANTERN));
+            locations.add(loc);
+        }
+        new BukkitRunnable(){
+            @Override public void run(){
+                if(!player.isOnline())return;
+                for(Location loc:locations){
+                    org.bukkit.block.data.BlockData data=originals.get(loc);
+                    if(data!=null && player.getWorld().equals(world)) player.sendBlockChange(loc,data);
+                }
+            }
+        }.runTaskLater(this,150L);
+    }
+
     private void teleportHome(Player player, String id) {
         try {
             Plot plot = null;
@@ -1680,6 +1741,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             int x = (plot.minX() + plot.maxX()) / 2, z = (plot.minZ() + plot.maxZ()) / 2;
             Location target = new Location(world, x + 0.5, world.getHighestBlockYAt(x, z) + 1.0, z + 0.5);
             player.teleport(target);
+            if(plot.ownerUuid()!=null && plot.ownerUuid().equals(player.getUniqueId().toString())) showOwnedPlotOutline(player,plot);
         } catch (SQLException ex) { player.sendMessage(msg("Database error.")); }
     }
 
