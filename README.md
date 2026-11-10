@@ -1,4 +1,4 @@
-# ClasherCity 1.0.0 — Clasher Network
+# ClasherCity 1.1.0 — Clasher Network
 
 ClasherCity is a Paper plugin for a separate flat city world, paid building plots, WorldGuard protection, physical/GUI maps, tournament phases, public voting, judge scoring, leaderboard calculation and configurable console-command rewards.
 
@@ -6,6 +6,7 @@ ClasherCity is a Paper plugin for a separate flat city world, paid building plot
 
 - Paper `26.2-10-dev` / API `26.2`
 - Java **25** for building and running on Paper 26.x
+- Multiverse-Core (required by default for city-world creation/import/loading)
 - WorldGuard `7.0.19`
 - FastAsyncWorldEdit `2.15.3` (WorldGuard's WorldEdit-compatible API provider on this server)
 - Vault `1.7.3` with an economy provider such as EssentialsX Economy
@@ -23,7 +24,7 @@ mvn -U clean package
 
 The shaded plugin JAR will be:
 
-`target/ClasherCity-1.0.0.jar`
+`target/ClasherCity-1.1.0.jar`
 
 The SQLite JDBC driver is shaded into this JAR. Paper, WorldGuard, FAWE and Vault APIs are provided by the server and are not bundled.
 
@@ -33,14 +34,14 @@ Windows users can run `build.bat`; Linux/macOS users can run `./build.sh` after 
 
 1. Stop the test server and back up the test server folder.
 2. Confirm that WorldGuard, Vault, an economy provider and FastAsyncWorldEdit are installed.
-3. Copy `target/ClasherCity-1.0.0.jar` into the test server's `plugins/` folder.
-4. Start the server. ClasherCity creates/loads the `clasher_city` flat world and creates `plugins/ClasherCity/config.yml` and `clashercity.db`.
+3. Copy `target/ClasherCity-1.1.0.jar` into the test server's `plugins/` folder.
+4. Start the server. ClasherCity asks Multiverse-Core to create/load/import the `clasher_city` flat world and creates `plugins/ClasherCity/config.yml` and `clashercity.db`.
 5. Check console for `ClasherCity enabled` and run `/clcity info`.
 6. Do **not** install this on the live Clasher Network server until all tests below pass.
 
 ## Admin setup
 
-The city world is named `clasher_city` by default. It is auto-created/loaded from `config.yml`.
+The city world is named `clasher_city` by default and is managed through Multiverse-Core. Keep `city.multiverse.enabled: true` in `plugins/ClasherCity/config.yml`. If the world folder already exists but is not registered in Multiverse, ClasherCity imports it as a NORMAL environment world; if it does not exist, ClasherCity runs the equivalent of `/mv create clasher_city normal --world-type flat --no-structures`. If it is already registered but unloaded, ClasherCity loads it. Existing world data is never regenerated or overwritten. Install Multiverse-Core before ClasherCity. Set `city.multiverse.enabled: false` only if you intentionally want Bukkit's native world creation instead.
 
 1. Go to the city world (or run `/clcity create` to make sure it is loaded).
 2. Run `/clcity setspawn` while standing at your intended city spawn.
