@@ -521,6 +521,14 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                         sender.sendMessage(msg(ps.executeUpdate() == 1 ? "Price updated." : "Plot not found."));
                     }
                 }
+                case "resetplotsroads" -> {
+                    if (args.length < 2 || !args[1].equalsIgnoreCase("confirm")) {
+                        sender.sendMessage(msg("&cDANGER: This removes ALL registered plots and roads, their WorldGuard regions, and safely-restorable ClasherCity-generated boundaries, road surfaces, lamps and plot boards."));
+                        sender.sendMessage(msg("Back up the city world and plugins/ClasherCity folder first. Run &e/clcity resetplotsroads confirm &cto proceed."));
+                        break;
+                    }
+                    resetPlotsAndRoads(sender);
+                }
                 case "deleteplot" -> {
                     if (args.length < 3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity deleteplot <id> confirm"); break; }
                     deletePlot(args[1]); sender.sendMessage(msg("Plot deleted: " + args[1]));
@@ -1171,6 +1179,81 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             ps.setString(6, cityWorld.getName()); ps.setInt(7, minX - 1); ps.setInt(8, maxX + 1); ps.setInt(9, minZ - 1); ps.setInt(10, maxZ + 1);
             try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
         }
+    }
+
+    private void resetPlotsAndRoads(CommandSender sender) throws Exception {
+        if (cityWorld == null || Bukkit.getWorld(cityWorld.getName()) == null) {
+            throw new IllegalStateException("City world must be loaded before cleanup.");
+        }
+        RegionManager manager = regionManager(cityWorld);
+        if (manager == null) throw new IllegalStateException("WorldGuard region manager is unavailable; nothing was deleted.");
+
+        List<String> plotIds = new ArrayList<>();
+        try (PreparedStatement ps = db.prepareStatement("SELECT id FROM plots"); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) plotIds.add(rs.getString(1));
+        }
+        List<String> roadIds = new ArrayList<>();
+        try (PreparedStatement ps = db.prepareStatement("SELECT id FROM areas WHERE upper(type)='ROAD'"); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) roadIds.add(rs.getString(1));
+        }
+
+        // Restore only blocks whose current block data still exactly matches a ClasherCity-generated value.
+        // Player-modified blocks are deliberately skipped and left untouched.
+        int restored = 0, skipped = 0;
+        String operationSql = "SELECT c.rowid,c.world,c.x,c.y,c.z,c.old_data,c.new_data,c.operation_id "
+                + "FROM worldgen_changes c JOIN worldgen_operations o ON o.id=c.operation_id "
+                + "WHERE o.status='ACTIVE' AND upper(o.kind) IN ('PLOT_BORDER','ROAD','PLOT_BOARD') "
+                + "AND c.restored=0 ORDER BY o.created_at DESC,c.rowid DESC";
+        List<Long> restoredRows = new ArrayList<>();
+        try (PreparedStatement ps = db.prepareStatement(operationSql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                World world = Bukkit.getWorld(rs.getString("world"));
+                if (world == null) { skipped++; continue; }
+                Block block = world.getBlockAt(rs.getInt("x"), rs.getInt("y"), rs.getInt("z"));
+                if (!block.getBlockData().getAsString().equals(rs.getString("new_data"))) { skipped++; continue; }
+                block.setBlockData(Bukkit.createBlockData(rs.getString("old_data")), false);
+                restoredRows.add(rs.getLong("rowid"));
+                restored++;
+            }
+        }
+        try (PreparedStatement mark = db.prepareStatement("UPDATE worldgen_changes SET restored=1 WHERE rowid=?")) {
+            for (Long rowId : restoredRows) { mark.setLong(1,rowId); mark.addBatch(); }
+            mark.executeBatch();
+        }
+        try (PreparedStatement ps = db.prepareStatement("UPDATE worldgen_operations SET status='UNDONE' WHERE status='ACTIVE' AND upper(kind) IN ('PLOT_BORDER','ROAD','PLOT_BOARD')")) {
+            ps.executeUpdate();
+        }
+
+        // Remove only ClasherCity's own region IDs; the global and public regions are preserved.
+        for (String id : plotIds) manager.removeRegion(plotRegionId(id));
+        for (String id : roadIds) manager.removeRegion(areaRegionId("ROAD", id));
+        manager.saveChanges();
+
+        db.setAutoCommit(false);
+        try {
+            try (Statement st = db.createStatement()) {
+                st.executeUpdate("DELETE FROM tournament_entries");
+                st.executeUpdate("DELETE FROM votes");
+                st.executeUpdate("DELETE FROM scores");
+                st.executeUpdate("DELETE FROM reward_queue");
+                st.executeUpdate("DELETE FROM construction_progress");
+                st.executeUpdate("DELETE FROM plot_gallery");
+                st.executeUpdate("DELETE FROM plot_boards");
+                st.executeUpdate("DELETE FROM plots");
+                st.executeUpdate("DELETE FROM areas WHERE upper(type)='ROAD'");
+            }
+            db.commit();
+        } catch (Exception ex) {
+            db.rollback();
+            throw ex;
+        } finally {
+            db.setAutoCommit(true);
+        }
+        mapRenderer.invalidate();
+        sender.sendMessage(msg("&aCleanup complete. Removed &f" + plotIds.size() + " &aplots and &f" + roadIds.size()
+                + " &aroad registrations/regions. Restored &f" + restored + " &agenerated blocks; &e" + skipped
+                + " &ablocks were skipped because they were changed by players or their world was unavailable."));
+        sender.sendMessage(msg("&7Public areas, the city world, player builds, and transaction history were preserved."));
     }
 
     private void deletePlot(String id) throws Exception {
