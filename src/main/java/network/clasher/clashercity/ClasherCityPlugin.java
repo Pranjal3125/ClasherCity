@@ -569,11 +569,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                     if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity undo <operation-id> confirm"); break; }
                     undoWorldgen(sender,args[1]);
                 }
-                case "entrance" -> {
-                    if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity entrance <preview|create>"); break; }
-                    if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity entrance <preview|create>"); break; }
-                    buildCityEntrance(p,args[1].equalsIgnoreCase("create"));
-                }
                 case "planningcentre" -> {
                     if(!(sender instanceof Player p) || args.length<2) { sender.sendMessage("Usage: /clcity planningcentre <preview|create>"); break; }
                     if(!args[1].equalsIgnoreCase("preview") && !args[1].equalsIgnoreCase("create")) { sender.sendMessage("Usage: /clcity planningcentre <preview|create>"); break; }
@@ -604,10 +599,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                     else p.sendMessage(msg("Usage: /clcity mapwall <select|preview|create|update|remove>"));
                 }
                 case "start" -> startTournament(sender, args.length >= 2 ? String.join(" ", Arrays.copyOfRange(args, 1, args.length)) : "ClasherCity Building Championship");
+                case "phases" -> { if(sender instanceof Player p) openPhaseControlMenu(p); else sender.sendMessage("Use /clcity phases in-game."); }
                 case "phase" -> {
                     if (args.length < 2) { sender.sendMessage("Usage: /clcity phase <setup|registration|building|voting|results>"); break; }
-                    Phase next = Phase.valueOf(args[1].toUpperCase(Locale.ROOT));
-                    setPhase(next); broadcast(msg("Tournament phase changed to &e" + next.name() + "&a."));
+                    announcePhaseChange(Phase.valueOf(args[1].toUpperCase(Locale.ROOT)));
                 }
                 case "end" -> closeTournament(sender);
                 case "voting" -> { setPhase(Phase.VOTING); broadcast(msg("Voting is now open. Use &e/buildvote&a.")); }
@@ -652,8 +647,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         sender.sendMessage(color("&e/clcity ceremony <preview|start> &7- Build podium and announce top 3"));
         sender.sendMessage(color("&e/clcity plotboard <id> <preview|create> &7- Place a live plot information board"));
         sender.sendMessage(color("&e/clcity planningcentre <preview|create> &7- Build the modern city planning centre"));
-        sender.sendMessage(color("&e/clcity entrance <preview|create> &7- Build the grand city entrance"));
         sender.sendMessage(color("&e/clcity start [name] &7- Start a tournament"));
+        sender.sendMessage(color("&e/clcity phases &7- Open serial tournament phase GUI"));
         sender.sendMessage(color("&e/clcity phase <phase> &7- Change tournament phase"));
         sender.sendMessage(color("&e/clcity judge <add|remove> <player> &7- Manage judges"));
         sender.sendMessage(color("&e/clcity score <plot> <category> <0..max> &7- Submit judge score"));
@@ -704,6 +699,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         }
         mapRenderer.invalidate();
         player.sendMessage(msg("Plot &e" + id + "&a created (&f" + width + "x" + depth + "&a) for &e" + economy.format(price) + "&a."));
+        try { buildPlotBorder(player, id, true); } catch (Exception ex) { player.sendMessage(msg("&ePlot registered, but border placement failed. Use /clcity border " + id + " create.")); getLogger().warning("Automatic plot border failed for " + id + ": " + ex.getMessage()); }
     }
 
     private void createAreaFromSelection(Player player, String id, String type) throws Exception {
@@ -879,62 +875,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             persistWorldgenOperation(operationId,player,"ROAD",changes);
             player.sendMessage(msg("Reference road &e"+roadId+"&a generated: &f"+changed+"&a surface blocks, &f"+lampsPlaced+"&a double-arm deepslate lamps; occupied blocks skipped: &c"+skipped+"&a. Undo ID: &e"+operationId));
         }else player.sendMessage(msg("Reference road preview &e"+roadId+"&a: &f"+eligible+"&a surface blocks available, &c"+skipped+"&a occupied; &f"+lampCandidates+"&a lamp positions."));
-    }
-
-    private void buildCityEntrance(Player player,boolean create) {
-        if(cityWorld==null || !isCityWorld(player.getWorld())) throw new IllegalArgumentException("Stand in the city world to build the entrance.");
-        int cx=player.getLocation().getBlockX(), cz=player.getLocation().getBlockZ();
-        String operationId=UUID.randomUUID().toString().substring(0,8);
-        List<String[]> changes=new ArrayList<>();
-        int eligible=0,skipped=0,placed=0;
-        for(int side:new int[]{-4,4}){
-            int x=cx+side, z=cz;
-            int ground=cityWorld.getHighestBlockYAt(x,z);
-            for(int dy=1;dy<=5;dy++){
-                org.bukkit.block.Block block=cityWorld.getBlockAt(x,ground+dy,z);
-                if(block.getType().isAir()||block.isPassable()){
-                    eligible++;
-                    if(create){ placeGeneratedBlock(changes,block,dy<=3?Material.STONE_BRICKS:Material.SEA_LANTERN); placed++; }
-                } else skipped++;
-            }
-        }
-        for(int dx=-4;dx<=4;dx++){
-            int x=cx+dx,z=cz,ground=cityWorld.getHighestBlockYAt(x,z);
-            org.bukkit.block.Block arch=cityWorld.getBlockAt(x,ground+5,z);
-            if(arch.getType().isAir()||arch.isPassable()){
-                eligible++;
-                if(create){ placeGeneratedBlock(changes,arch,Material.QUARTZ_BLOCK); placed++; }
-            } else skipped++;
-        }
-        for(int dz=2;dz<=12;dz++) for(int dx=-4;dx<=4;dx++){
-            int x=cx+dx,z=cz+dz,ground=cityWorld.getHighestBlockYAt(x,z)+1;
-            Material material=Math.abs(dx)>=3?Material.LIGHT_GRAY_CONCRETE:(dx==0?Material.WHITE_CONCRETE:Material.BLACK_CONCRETE);
-            org.bukkit.block.Block road=cityWorld.getBlockAt(x,ground,z);
-            if(road.getType().isAir()||road.isPassable()){
-                eligible++;
-                if(create){ placeGeneratedBlock(changes,road,material); placed++; }
-            } else skipped++;
-        }
-        int signX=cx, signZ=cz;
-        int signY=cityWorld.getHighestBlockYAt(signX,signZ+1)+1;
-        org.bukkit.block.Block signBlock=cityWorld.getBlockAt(signX,signY,signZ+1);
-        if(signBlock.getType().isAir()||signBlock.isPassable()){
-            eligible++;
-            if(create){
-                placeGeneratedBlock(changes,signBlock,Material.OAK_SIGN);
-                if(signBlock.getState() instanceof org.bukkit.block.Sign sign){
-                    sign.setLine(0,color("&6&lWELCOME"));
-                    sign.setLine(1,color("&b&lCLASHERCITY"));
-                    sign.setLine(2,color("&fBuild • Explore"));
-                    sign.setLine(3,color("&eClasher Network"));
-                    sign.update(true,false);
-                }
-                placed++;
-            }
-        } else skipped++;
-        if(!create){ player.sendMessage(msg("Grand entrance preview: &f"+eligible+"&a clear block positions; &c"+skipped+"&a occupied. Arch width 9, height 5, approach road 9x11.")); return; }
-        persistWorldgenOperation(operationId,player,"CITY_ENTRANCE",changes);
-        player.sendMessage(msg("Grand CLASHERCITY entrance generated: &f"+placed+"&a blocks placed, &c"+skipped+"&a skipped. Undo ID: &e"+operationId));
     }
 
     private void buildPlanningCentre(Player player,boolean create) {
@@ -1782,6 +1722,41 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         } catch(SQLException ex){ player.sendMessage(msg("Could not load destination.")); }
     }
 
+
+    private void announcePhaseChange(Phase next) throws SQLException {
+        Phase previous=phase();
+        if(previous==next)return;
+        setPhase(next);
+        broadcast(msg("&6Phase "+previous.name()+" has ended."));
+        broadcast(msg("&eNew phase: &6"+next.name()));
+        switch(next){
+            case SETUP -> broadcast(msg("Admins: prepare the city and tournament using /clcity admin."));
+            case REGISTRATION -> broadcast(msg("Players: browse /plots, purchase a plot, then use /plot enter <plot-id>."));
+            case BUILDING -> broadcast(msg("Builders: use /plot home and build on your own registered plot."));
+            case VOTING -> broadcast(msg("Players: vote using /buildvote. Judges: submit scores using /clcity score <plot> <category> <marks>."));
+            case RESULTS -> broadcast(msg("View standings using /buildtop. Admins: launch /clcity ceremony start."));
+        }
+    }
+
+    private void openPhaseControlMenu(Player player) {
+        MenuHolder holder=new MenuHolder("PHASES",0);
+        Inventory inv=holder.create(27,color("&8✦ TOURNAMENT CONTROL &8• &6PHASES"));
+        frameMenu(inv,Material.BLACK_STAINED_GLASS_PANE);
+        inv.setItem(4,menuItem(Material.NETHER_STAR,"&6&lTOURNAMENT WORKFLOW",List.of("&7Current phase: &e"+phase(),"","&8Choose the next stage in order."),"none",null));
+        Phase[] phases={Phase.SETUP,Phase.REGISTRATION,Phase.BUILDING,Phase.VOTING,Phase.RESULTS};
+        Material[] icons={Material.CLOCK,Material.EMERALD,Material.BRICKS,Material.WRITABLE_BOOK,Material.GOLD_BLOCK};
+        int[] slots={10,11,13,15,16};
+        for(int i=0;i<phases.length;i++){
+            Phase p=phases[i];
+            inv.setItem(slots[i],menuItem(phase()==p?Material.LIME_CONCRETE:icons[i],
+                (phase()==p?"&a&l▶ ":"&e&l"+(i+1)+". ")+p.name(),
+                List.of(phase()==p?"&aCurrent stage":"&7Change phase to "+p.name(),"","&e➜ Click to change"),
+                "phase_"+p.name().toLowerCase(Locale.ROOT),null));
+        }
+        inv.setItem(22,menuItem(Material.BARRIER,"&cClose",List.of("&7Close phase manager."),"close",null));
+        player.openInventory(inv);
+    }
+
     private void openAdminMenu(Player player) {
         MenuHolder holder = new MenuHolder("ADMIN", 0);
         Inventory inv = holder.create(36, color("&8✦  CLASHERCITY  &8•  &cADMIN CONSOLE"));
@@ -1794,6 +1769,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         inv.setItem(20, menuItem(Material.BRICKS, "&e&lBUILDING PHASE", List.of("&7Allow plot owners to build.", "", "&e➜ Set phase to BUILDING"), "admin_building", null));
         inv.setItem(22, menuItem(Material.WRITABLE_BOOK, "&d&lVOTING CONTROL", List.of("&7Open player voting for registered plots.", "", "&e➜ Set phase to VOTING"), "admin_voting", null));
         inv.setItem(24, menuItem(Material.GOLD_BLOCK, "&6&lFINAL LEADERBOARD", List.of("&7Review current tournament scores.", "", "&e➜ View results"), "admin_results", null));
+        inv.setItem(28,menuItem(Material.WRITABLE_BOOK,"&e&lPHASE CONTROL",List.of("&7Manage tournament stages in order.","&7Current: &f"+phase(),"","&e➜ Open phase GUI"),"open_phases",null));
         inv.setItem(31, menuItem(Material.BARRIER, "&cClose console", List.of("&7Return to the game."), "close", null));
         player.openInventory(inv);
     }
@@ -1862,10 +1838,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                             "&7Transaction: &fVault economy",
                             "", sold ? "&cOwned by " + p.ownerName() : "&ePurchase is available during registration."),
                     "info", p.id()));
-            if (!sold && phase() == Phase.REGISTRATION) {
+            if (!sold) {
                 inv.setItem(22, menuItem(Material.LIME_CONCRETE, "&a&lPURCHASE PROPERTY",
                         List.of("&7Acquire plot " + p.id() + ".", "&7Price: &e" + economy.format(p.price()),
-                                "", "&e➜ Continue to purchase confirmation"), "confirm", p.id()));
+                                "&7Current phase: &f" + phase(), phase() == Phase.REGISTRATION ? "&aPurchases are open." : "&cPurchases are closed.",
+                                "", "&e➜ Open purchase confirmation"), "confirm", p.id()));
             } else if (sold && p.ownerUuid().equals(player.getUniqueId().toString()) && phase() == Phase.REGISTRATION) {
                 boolean entered = isTournamentEntry(p.id());
                 inv.setItem(22, menuItem(entered ? Material.LIME_DYE : Material.WRITABLE_BOOK,
@@ -2042,7 +2019,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         for (int rank = 1; rank <= 3; rank++) setMeta("winner_" + rank, "");
         setPhase(Phase.REGISTRATION);
         sender.sendMessage(msg("Tournament started: &e" + name + "&a. Plot registration is now open."));
-        broadcast(msg("&6" + name + "&a has started! Use &e/city&a or &e/plots&a to purchase a plot."));
+        broadcast(msg("&6" + name + "&a has started! Registration is open. Use &e/plots&a to purchase a plot, then &e/plot enter <plot-id> to join."));
     }
 
     private void closeTournament(CommandSender sender) throws Exception {
@@ -2497,6 +2474,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 case "admin_building" -> { if (player.hasPermission("clashercity.admin")) { setPhase(Phase.BUILDING); broadcast(msg("Building phase is now open.")); openAdminMenu(player); } }
                 case "admin_voting" -> { if (player.hasPermission("clashercity.admin")) { setPhase(Phase.VOTING); broadcast(msg("Voting is now open. Use &e/buildvote&a.")); openAdminMenu(player); } }
                 case "admin_results" -> { if (player.hasPermission("clashercity.admin")) { player.closeInventory(); showResults(player); } }
+                case "open_phases" -> { if(player.hasPermission("clashercity.admin")) openPhaseControlMenu(player); }
+                case "phase_setup","phase_registration","phase_building","phase_voting","phase_results" -> { if(player.hasPermission("clashercity.admin")) { announcePhaseChange(Phase.valueOf(action.substring(6).toUpperCase(Locale.ROOT))); openPhaseControlMenu(player); } }
                 default -> { }
             }
         } catch (Exception ex) {
