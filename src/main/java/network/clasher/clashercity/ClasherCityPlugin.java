@@ -1183,6 +1183,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 st.executeUpdate("DELETE FROM scores");
                 st.executeUpdate("DELETE FROM reward_queue");
                 st.executeUpdate("DELETE FROM plot_boards");
+                st.executeUpdate("DELETE FROM plot_terrain");
                 st.executeUpdate("DELETE FROM plots");
                 st.executeUpdate("DELETE FROM areas WHERE upper(type)='ROAD'");
             }
@@ -1213,6 +1214,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             try (PreparedStatement entry = db.prepareStatement("DELETE FROM tournament_entries WHERE plot_id=?")) {
                 entry.setString(1, id); entry.executeUpdate();
             }
+            try (PreparedStatement terrain = db.prepareStatement("DELETE FROM plot_terrain WHERE plot_id=?")) { terrain.setString(1,id); terrain.executeUpdate(); }
             try (PreparedStatement ps = db.prepareStatement("DELETE FROM plots WHERE id=? AND owner_uuid IS NULL")) {
                 ps.setString(1, id);
                 if (ps.executeUpdate() != 1) throw new SQLException("Plot delete did not affect exactly one unowned plot.");
