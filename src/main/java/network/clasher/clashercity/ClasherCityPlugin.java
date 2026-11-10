@@ -1701,9 +1701,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             "Respect ownership, event phases and staff instructions. Griefing and voting abuse are not allowed."
         };
         if(i<0||i>=titles.length)return;
-        p.sendMessage(color("&6---- CLASHERCITY HELP: "+titles[i]+" ----"));
-        p.sendMessage(color("&f"+body[i]));
-        p.sendMessage(color("&7Open /clcityhelp to browse all topics."));
+        MenuHolder holder=new MenuHolder("HELP_TOPIC",i);
+        Inventory inv=holder.create(27,color("&8✦ HELP &8• &b"+titles[i]));
+        frameMenu(inv,Material.BLACK_STAINED_GLASS_PANE);
+        inv.setItem(13,menuItem(Material.BOOK,"&b&l"+titles[i],List.of("&8CLASHERCITY GUIDE","","&f"+body[i],"","&7Use Back to browse other topics."),"none",null));
+        inv.setItem(18,menuItem(Material.ARROW,"&fBack to Help",List.of("&7Return to all help categories."),"help_back",null));
+        inv.setItem(26,menuItem(Material.BARRIER,"&cClose",List.of("&7Close help."),"close",null));
+        p.openInventory(inv);
     }
     private void openMainMenu(Player player) {
         MenuHolder holder = new MenuHolder("MAIN", 0);
@@ -2058,14 +2062,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         for (int rank = 1; rank <= 3; rank++) setMeta("winner_" + rank, "");
         setPhase(Phase.REGISTRATION);
         sender.sendMessage(msg("Tournament started: &e" + name + "&a. Plot registration is now open."));
-        broadcast(msg("&6" + name + "&a has started! Registration is open. Use &e/plots&a to purchase a plot, then &e/plot enter <plot-id> to join."));
+        broadcast(msg("&6Phase SETUP has ended."));
+        broadcast(msg("&eNew phase: &6REGISTRATION"));
+        broadcast(msg("&6" + name + "&a has started! Use &e/plots&a to purchase a plot, then &e/plot enter <plot-id> to join."));
     }
 
     private void closeTournament(CommandSender sender) throws Exception {
         if (phase() == Phase.RESULTS) { sender.sendMessage(msg("Results have already been finalized.")); showResults(sender); return; }
         setPhase(Phase.RESULTS);
         List<ResultRow> results = calculateResults();
-        broadcast(msg("Voting has closed. Final results are being announced."));
+        broadcast(msg("Phase " + phase().name() + " has ended."));
+        broadcast(msg("New phase: RESULTS. Voting has closed and final results are being announced."));
         if (results.isEmpty()) {
             sender.sendMessage(msg("No owned plots were available for final scoring."));
             return;
@@ -2472,6 +2479,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 case "close" -> player.closeInventory();
                 case "open_help" -> openHelpMenu(player);
                 case "help_home" -> openMainMenu(player);
+                case "help_back" -> openHelpMenu(player);
                 case "help_0","help_1","help_2","help_3","help_4","help_5","help_6","help_7","help_8","help_9","help_10" -> showHelpTopic(player,Integer.parseInt(action.substring(5)));
                 case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
                 case "plots" -> openPlotMenu(player, 0);
@@ -2511,10 +2519,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 case "admin_map" -> { if (player.hasPermission("clashercity.admin")) givePhysicalMap(player); }
                 case "admin_start" -> { if (player.hasPermission("clashercity.admin")) startTournament(player, "ClasherCity Building Championship"); }
                 case "admin_building" -> { if (player.hasPermission("clashercity.admin")) { setPhase(Phase.BUILDING); broadcast(msg("Building phase is now open.")); openAdminMenu(player); } }
-                case "admin_voting" -> { if (player.hasPermission("clashercity.admin")) { setPhase(Phase.VOTING); broadcast(msg("Voting is now open. Use &e/buildvote&a.")); openAdminMenu(player); } }
+                case "admin_voting" -> { if (player.hasPermission("clashercity.admin")) { announcePhaseChange(Phase.VOTING); openAdminMenu(player); } }
                 case "admin_results" -> { if (player.hasPermission("clashercity.admin")) { player.closeInventory(); showResults(player); } }
                 case "open_phases" -> { if(player.hasPermission("clashercity.admin")) openPhaseControlMenu(player); }
-                case "phase_setup","phase_registration","phase_building","phase_voting","phase_results" -> { if(player.hasPermission("clashercity.admin")) { announcePhaseChange(Phase.valueOf(action.substring(6).toUpperCase(Locale.ROOT))); openPhaseControlMenu(player); } }
+                case "phase_setup","phase_registration","phase_building","phase_voting" -> { if(player.hasPermission("clashercity.admin")) { announcePhaseChange(Phase.valueOf(action.substring(6).toUpperCase(Locale.ROOT))); openPhaseControlMenu(player); } }
+                case "phase_results" -> { if(player.hasPermission("clashercity.admin")) { closeTournament(player); openPhaseControlMenu(player); } }
                 default -> { }
             }
         } catch (Exception ex) {
