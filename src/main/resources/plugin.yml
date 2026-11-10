@@ -13,6 +13,9 @@ commands:
     description: ClasherCity administrator controls
     usage: /clcity help
     permission: clashercity.admin
+  clcityhelp:
+    description: Open the ClasherCity player help GUI
+    usage: /clcityhelp
   city:
     description: Open the ClasherCity main menu
     usage: /city [visit]

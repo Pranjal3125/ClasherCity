@@ -78,7 +78,7 @@ import java.util.List;
  * ClasherCity - city plot sales and building tournament management for Clasher Network.
  * WorldGuard is the protection source of truth; GriefPrevention is not modified.
  */
-public final class ClasherCityPlugin extends JavaPlugin implements Listener {
+public final class ClasherCityPlugin extends JavaPlugin implements Listener, org.bukkit.command.TabCompleter {
     private Economy economy;
     private Connection db;
     private World cityWorld;
@@ -103,6 +103,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         keyAction = new NamespacedKey(this, "action");
         keyPlot = new NamespacedKey(this, "plot_id");
         keyWand = new NamespacedKey(this, "selection_wand");
+        for(String n:List.of("clcity","city","citymap","plots","plot","buildvote","buildtop","clcityhelp")) if(getCommand(n)!=null)getCommand(n).setTabCompleter(this);
 
         if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null) {
             getLogger().severe("WorldGuard is required. ClasherCity will be disabled.");
@@ -175,8 +176,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             st.executeUpdate("CREATE TABLE IF NOT EXISTS scores (tournament_id TEXT NOT NULL, judge_uuid TEXT NOT NULL, plot_id TEXT NOT NULL, category TEXT NOT NULL, score INTEGER NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tournament_id, judge_uuid, plot_id, category))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS reward_queue (tournament_id TEXT NOT NULL, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, rank INTEGER NOT NULL, plot_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT, PRIMARY KEY(tournament_id, player_uuid, rank))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_visit_settings (player_uuid TEXT PRIMARY KEY, visits_enabled INTEGER NOT NULL DEFAULT 1)");
-            st.executeUpdate("CREATE TABLE IF NOT EXISTS construction_progress (plot_id TEXT PRIMARY KEY, milestone TEXT NOT NULL DEFAULT 'FOUNDATION', percent INTEGER NOT NULL DEFAULT 0, deadline TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)");
-            st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_gallery (id INTEGER PRIMARY KEY AUTOINCREMENT, plot_id TEXT NOT NULL, owner_uuid TEXT NOT NULL, owner_name TEXT NOT NULL, image_url TEXT NOT NULL, caption TEXT NOT NULL DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_operations (id TEXT PRIMARY KEY, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_changes (operation_id TEXT NOT NULL, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL, old_data TEXT NOT NULL, new_data TEXT NOT NULL, restored INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(operation_id,world,x,y,z))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_boards (plot_id TEXT PRIMARY KEY, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL)");
@@ -374,6 +373,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String name = command.getName().toLowerCase(Locale.ROOT);
         if (name.equals("clcity")) return adminCommand(sender, args);
+        if(name.equals("clcityhelp")){if(!(sender instanceof Player p)){sender.sendMessage("Players only.");return true;}openHelpMenu(p);return true;}
         if (name.equals("city")) {
             if (!(sender instanceof Player player)) { sender.sendMessage("Players only."); return true; }
             if (args.length > 0 && args[0].equalsIgnoreCase("visit")) {
@@ -436,11 +436,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 if (args.length < 2 || (!args[1].equalsIgnoreCase("on") && !args[1].equalsIgnoreCase("off"))) player.sendMessage(msg("Usage: /plot visits <on|off>"));
                 else setPlotVisits(player, args[1].equalsIgnoreCase("on"));
             }
-            case "gallery" -> {
-                if (args.length < 2) player.sendMessage(msg("Usage: /plot gallery <plot-id> [image-url] [caption]"));
-                else if (args.length == 2) showPlotGallery(player, args[1]);
-                else submitPlotScreenshot(player, args);
-            }
             case "info" -> {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot info <plot-id>"));
                 else showPlotInfo(player, args[1]);
@@ -449,7 +444,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 if (args.length < 2) player.sendMessage(msg("Usage: /plot abandon <plot-id>"));
                 else abandonPlot(player, args[1]);
             }
-            default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|visit|visits|progress|gallery|info|abandon> [arguments]"));
+            default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|outline|visit|visits|info|abandon> [arguments]"));
         }
         return true;
     }
@@ -1232,7 +1227,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 st.executeUpdate("DELETE FROM votes");
                 st.executeUpdate("DELETE FROM scores");
                 st.executeUpdate("DELETE FROM reward_queue");
-                st.executeUpdate("DELETE FROM plot_gallery");
                 st.executeUpdate("DELETE FROM plot_boards");
                 st.executeUpdate("DELETE FROM plots");
                 st.executeUpdate("DELETE FROM areas WHERE upper(type)='ROAD'");
@@ -1531,46 +1525,6 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         } catch (SQLException ex) { player.sendMessage(msg("Database error.")); }
     }
 
-    private void submitPlotScreenshot(Player player, String[] args) {
-        try {
-            Plot plot=getPlot(args[1]);
-            if(plot==null || plot.ownerUuid()==null || (!plot.ownerUuid().equals(player.getUniqueId().toString()) && !player.hasPermission("clashercity.admin"))) {
-                player.sendMessage(msg("Only the plot owner or an admin can add gallery screenshots.")); return;
-            }
-            java.net.URI uri=java.net.URI.create(args[2]);
-            if(!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost()==null || args[2].length()>1000) {
-                player.sendMessage(msg("Screenshot URL must be a valid HTTPS image link.")); return;
-            }
-            String caption=args.length>3?String.join(" ",Arrays.copyOfRange(args,3,args.length)):"";
-            if(caption.length()>120) caption=caption.substring(0,120);
-            try(PreparedStatement ps=db.prepareStatement("INSERT INTO plot_gallery(plot_id,owner_uuid,owner_name,image_url,caption) VALUES(?,?,?,?,?)")){
-                ps.setString(1,plot.id()); ps.setString(2,player.getUniqueId().toString()); ps.setString(3,player.getName()); ps.setString(4,uri.toString()); ps.setString(5,caption); ps.executeUpdate();
-            }
-            player.sendMessage(msg("Screenshot link added to gallery for plot &e"+plot.id()+"&a."));
-        } catch(IllegalArgumentException ex){ player.sendMessage(msg("Invalid screenshot URL. Use a direct HTTPS image link.")); }
-        catch(SQLException ex){ player.sendMessage(msg("Could not save screenshot to gallery.")); }
-    }
-
-    private void showPlotGallery(Player player, String plotId) {
-        try {
-            Plot plot=getPlot(plotId);
-            if(plot==null){ player.sendMessage(msg("Plot not found.")); return; }
-            player.sendMessage(color("&6---- Gallery: "+plot.id()+" ----"));
-            try(PreparedStatement ps=db.prepareStatement("SELECT owner_name,image_url,caption,created_at FROM plot_gallery WHERE plot_id=? ORDER BY id DESC LIMIT 10")){
-                ps.setString(1,plot.id());
-                try(ResultSet rs=ps.executeQuery()){
-                    int count=0;
-                    while(rs.next()){
-                        count++;
-                        player.sendMessage(color("&e"+count+". &f"+rs.getString("caption")+" &7by "+rs.getString("owner_name")+" &8("+rs.getString("created_at")+")"));
-                        player.sendMessage(color("&b"+rs.getString("image_url")));
-                    }
-                    if(count==0) player.sendMessage(msg("No screenshots submitted yet."));
-                }
-            }
-        } catch(SQLException ex){ player.sendMessage(msg("Could not load plot gallery.")); }
-    }
-
     private boolean plotVisitsEnabled(UUID uuid) throws SQLException {
         try (PreparedStatement ps = db.prepareStatement("SELECT visits_enabled FROM plot_visit_settings WHERE player_uuid=?")) {
             ps.setString(1, uuid.toString());
@@ -1739,6 +1693,39 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         for (int row = 1; row < rows - 1; row++) { inv.setItem(row * 9, accentPane); inv.setItem(row * 9 + 8, accentPane); }
     }
 
+
+    private void openHelpMenu(Player p){
+        MenuHolder holder=new MenuHolder("HELP",0);
+        Inventory inv=holder.create(54,color("&8✦ CLASHERCITY HELP &8• &7PLAYER GUIDE"));
+        frameMenu(inv,Material.BLACK_STAINED_GLASS_PANE);
+        String[] names={"GETTING STARTED","PLOT MARKETPLACE","MY PROPERTY","BUILDING GUIDE","CHAMPIONSHIP","VOTING GUIDE","JUDGING & RESULTS","REWARDS","CITY MAP & TRAVEL","PLAYER COMMANDS","RULES & FAQ"};
+        Material[] icons={Material.COMPASS,Material.LIME_CONCRETE,Material.OAK_DOOR,Material.BRICKS,Material.NETHER_STAR,Material.WRITABLE_BOOK,Material.GOLD_INGOT,Material.EMERALD,Material.FILLED_MAP,Material.BOOK,Material.SHIELD};
+        int[] slots={10,11,12,13,14,15,16,19,20,21,22};
+        for(int i=0;i<names.length;i++)inv.setItem(slots[i],menuItem(icons[i],"&b&l"+names[i],List.of("&8PLAYER INFORMATION","","&7Click to read this guide.","","&e➜ View details"),"help_"+i,null));
+        inv.setItem(45,menuItem(Material.ARROW,"&fBack to city portal",List.of("&7Return to /city."),"help_home",null));
+        inv.setItem(49,menuItem(Material.BARRIER,"&cClose",List.of("&7Close help."),"close",null));
+        p.openInventory(inv);
+    }
+    private void showHelpTopic(Player p,int i){
+        String[] titles={"Getting Started","Plot Marketplace","My Property","Building Guide","Championship","Voting Guide","Judging & Results","Rewards","City Map & Travel","Player Commands","Rules & FAQ"};
+        String[] body={
+            "Use /city for the city portal and /plots to browse properties.",
+            "Choose a green available plot in /plots. Check its price and click PURCHASE PROPERTY. Purchases open during REGISTRATION.",
+            "Use /plot home [plot-id]. Visit others with /plot visit <player> if visits are enabled.",
+            "Build only on a plot you own and only during BUILDING. Roads and public areas are protected.",
+            "Phases: SETUP -> REGISTRATION -> BUILDING -> VOTING -> RESULTS. Follow announcements for next steps.",
+            "During VOTING, open /buildvote and choose one eligible plot. You cannot vote for your own entry or vote twice.",
+            "Admins appoint judges. Judges submit marks using /clcity score <plot> <category> <marks>. View rankings with /buildtop.",
+            "Final standings appear with /buildtop. Admins can start the podium ceremony using /clcity ceremony start.",
+            "Use /citymap for the atlas and /city for the city portal and destinations.",
+            "Commands: /city, /plots, /plot home, /plot info <id>, /plot visit <player>, /plot visits <on|off>, /buildvote, /buildtop, /clcityhelp.",
+            "Respect ownership, event phases and staff instructions. Griefing and voting abuse are not allowed."
+        };
+        if(i<0||i>=titles.length)return;
+        p.sendMessage(color("&6---- CLASHERCITY HELP: "+titles[i]+" ----"));
+        p.sendMessage(color("&f"+body[i]));
+        p.sendMessage(color("&7Open /clcityhelp to browse all topics."));
+    }
     private void openMainMenu(Player player) {
         MenuHolder holder = new MenuHolder("MAIN", 0);
         Inventory inv = holder.create(27, color("&8✦  CLASHERCITY  &8•  &7CITY PORTAL"));
@@ -1750,6 +1737,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         inv.setItem(20, menuItem(Material.OAK_DOOR, "&e&lMY PROPERTY", List.of("&8PERSONAL SHORTCUT", "", "&7Teleport to your owned plot.", "", "&e➜ Go to my plot"), "home", null));
         inv.setItem(22, menuItem(Material.WRITABLE_BOOK, "&d&lCHAMPIONSHIP", List.of("&8BUILDING TOURNAMENT", "", "&7Current phase: &f" + phase(), "&7Open tournament voting.", "", "&e➜ View tournament"), "vote", null));
         inv.setItem(24, menuItem(Material.GOLD_INGOT, "&6&lHALL OF FAME", List.of("&8LEADERBOARD", "", "&7See the current top builders.", "&7Check tournament standings.", "", "&e➜ View rankings"), "top", null));
+        inv.setItem(26,menuItem(Material.BOOK,"&b&lHELP & COMMANDS",List.of("&7Player guides, rules and commands.","","&e➜ Open /clcityhelp"),"open_help",null));
         player.openInventory(inv);
     }
 
@@ -2466,6 +2454,9 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         try {
             switch (action) {
                 case "close" -> player.closeInventory();
+                case "open_help" -> openHelpMenu(player);
+                case "help_home" -> openMainMenu(player);
+                case "help_0","help_1","help_2","help_3","help_4","help_5","help_6","help_7","help_8","help_9","help_10" -> showHelpTopic(player,Integer.parseInt(action.substring(5)));
                 case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
                 case "plots" -> openPlotMenu(player, 0);
                 case "map" -> openMapMenu(player, 0);
@@ -2517,6 +2508,33 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMenuDrag(InventoryDragEvent event) {
         if (event.getView().getTopInventory().getHolder() instanceof MenuHolder) event.setCancelled(true);
+    }
+
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){
+        String n=command.getName().toLowerCase(Locale.ROOT);List<String> out=new ArrayList<>();
+        if(n.equals("plot")){
+            if(args.length==1)out.addAll(List.of("claim","enter","home","outline","visit","visits","info","abandon"));
+            else if(args.length==2&&List.of("claim","enter","info","abandon").contains(args[0].toLowerCase(Locale.ROOT)))try{for(Plot p:getPlots())out.add(p.id());}catch(SQLException ignored){}
+            else if(args.length==2&&args[0].equalsIgnoreCase("visits"))out.addAll(List.of("on","off"));
+            else if(args.length==2&&args[0].equalsIgnoreCase("outline"))out.add("off");
+            else if(args.length==3&&args[0].equalsIgnoreCase("abandon"))out.add("confirm");
+        }else if(n.equals("clcity")&&sender.hasPermission("clashercity.admin")){
+            if(args.length==1)out.addAll(List.of("admin","help","phases","create","tp","wand","createplot","createroad","createpublic","border","roadbuild","parkbuild","setprice","deleteplot","setspawn","setlocation","removelocation","mapitem","mapwall","undo","planningcentre","plotboard","ceremony","start","phase","end","closevote","judge","score","winner","results","reward","info","ghostcorners","resetplotsroads"));
+            else if(args.length==2)switch(args[0].toLowerCase(Locale.ROOT)){
+                case "phase"->out.addAll(Arrays.stream(Phase.values()).map(x->x.name().toLowerCase(Locale.ROOT)).toList());
+                case "border","deleteplot","setprice","plotboard"->{try{for(Plot p:getPlots())out.add(p.id());}catch(SQLException ignored){}}
+                case "roadbuild","parkbuild"->{try{for(Area a:getAreas())out.add(a.id());}catch(SQLException ignored){}}
+                case "mapwall"->out.addAll(List.of("select","preview","create","update","remove"));
+                case "ceremony"->out.addAll(List.of("preview","start"));
+                case "ghostcorners"->out.addAll(List.of("on","off","status"));
+            };
+            else if(args.length==3&&List.of("border","roadbuild","parkbuild","plotboard").contains(args[0].toLowerCase(Locale.ROOT)))out.addAll(List.of("preview","create"));
+            else if(args.length==3&&List.of("deleteplot","undo","resetplotsroads").contains(args[0].toLowerCase(Locale.ROOT)))out.add("confirm");
+        }else if(n.equals("city")&&args.length==1)out.add("visit");
+        String prefix=args.length==0?"":args[args.length-1].toLowerCase(Locale.ROOT);
+        return out.stream().filter(v->v.toLowerCase(Locale.ROOT).startsWith(prefix)).distinct().toList();
     }
 
     // ------------------------------- Events -------------------------------
