@@ -441,8 +441,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 else showPlotInfo(player, args[1]);
             }
             case "abandon" -> {
-                if (args.length < 2) player.sendMessage(msg("Usage: /plot abandon <plot-id>"));
-                else abandonPlot(player, args[1]);
+                if (args.length < 2) player.sendMessage(msg("Usage: /plot abandon <plot-id> confirm"));
+                else if(args.length<3 || !args[2].equalsIgnoreCase("confirm")) {
+                    player.sendMessage(msg("&cWARNING: Confirming permanently removes blocks above the plot's original ground and clears its boundary. This cannot be undone."));
+                    player.sendMessage(msg("&eTo continue, type: &6/plot abandon "+args[1]+" confirm"));
+                } else abandonPlot(player,args[1]);
             }
             default -> player.sendMessage(msg("Usage: /plot <claim|enter|home|outline|visit|visits|info|abandon> [arguments]"));
         }
