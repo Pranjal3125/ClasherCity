@@ -56,16 +56,24 @@ messages:
 plot-border:
   height: 3
   entrance-width: 3
-  style: luxury-quartz-blackstone
-  pillar-spacing: 6
+  style: checkerboard-concrete
+  pattern: alternating-black-white
+  thickness: 1
 
 # Road generator: large areas are rejected to avoid long server-thread stalls.
 road-builder:
   max-area-blocks: 30000
   sidewalk-width: 2
-  streetlight-spacing: 12
-  streetlight-style: luxury-quartz-lantern
+  streetlight-spacing: 16
+  streetlight-style: screenshot-double-arm-deepslate
 
 # Park builder safety limit.
 park-builder:
   max-area-blocks: 20000
+
+# Owner-only plot feedback: particles and temporary client-side corner markers.
+plot-visuals:
+  outline-duration-seconds: 15
+  ghost-corners-enabled: true
+  ghost-corner-material: SEA_LANTERN
+  ghost-corner-duration-seconds: 15

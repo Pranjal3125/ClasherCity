@@ -862,7 +862,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             for(int offset=-3;offset<=3;offset++){
                 int ax=alongX?x:x+offset;
                 int az=alongX?z+offset:z;
-                if(offset!=0 && !cityWorld.getBlockAt(ax,baseY+8-Math.abs(offset),az).isPassable()) clear=false;
+                if(offset!=0) {
+                    int armY=baseY+8-Math.abs(offset);
+                    if(!cityWorld.getBlockAt(ax,armY,az).isPassable()) clear=false;
+                    if(Math.abs(offset)<=2 && !cityWorld.getBlockAt(ax,armY-1,az).isPassable()) clear=false;
+                }
             }
             lampCandidates++;
             if(create && clear){
@@ -872,9 +876,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     int ax=alongX?x:x+offset;
                     int az=alongX?z+offset:z;
                     int y=baseY+8-Math.abs(offset);
-                    Material arm=(Math.abs(offset)==3)?Material.OCHRE_FROGLIGHT:Material.DEEPSLATE_BRICK_STAIRS;
+                    Material arm=(Math.abs(offset)==3)?Material.OCHRE_FROGLIGHT:Material.DEEPSLATE_BRICKS;
                     placeGeneratedBlock(changes,cityWorld.getBlockAt(ax,y,az),arm);
-                    if(Math.abs(offset)==2) placeGeneratedBlock(changes,cityWorld.getBlockAt(ax,y-1,az),Material.DEEPSLATE_BRICKS);
+                    if(Math.abs(offset)==1 || Math.abs(offset)==2)
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(ax,y-1,az),Material.DEEPSLATE_BRICK_STAIRS);
                 }
                 lampsPlaced++;
             }
@@ -1677,7 +1682,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
             BukkitTask task=new BukkitRunnable(){
                 int ticks=0;
                 @Override public void run(){
-                    if(!player.isOnline() || !player.getWorld().equals(world) || ticks>=150){cancel();plotOutlineTasks.remove(player.getUniqueId());return;}
+                    if(!player.isOnline() || !player.getWorld().equals(world) || ticks>=300){cancel();plotOutlineTasks.remove(player.getUniqueId());return;}
                     Particle particle=Particle.END_ROD;
                     for(int x=selected.minX();x<=selected.maxX();x++){
                         player.spawnParticle(particle,new Location(world,x+0.5,y+0.15,selected.minZ()+0.5),1,0,0,0,0);
@@ -1715,7 +1720,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     if(data!=null && player.getWorld().equals(world)) player.sendBlockChange(loc,data);
                 }
             }
-        }.runTaskLater(this,150L);
+        }.runTaskLater(this,300L);
     }
 
     private void teleportHome(Player player, String id) {
