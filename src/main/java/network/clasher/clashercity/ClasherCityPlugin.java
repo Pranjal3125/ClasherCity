@@ -167,6 +167,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             st.execute("PRAGMA journal_mode=WAL");
             st.execute("PRAGMA foreign_keys=ON");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plots (id TEXT PRIMARY KEY, world TEXT NOT NULL, min_x INTEGER NOT NULL, min_z INTEGER NOT NULL, max_x INTEGER NOT NULL, max_z INTEGER NOT NULL, price REAL NOT NULL, owner_uuid TEXT, owner_name TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_terrain (plot_id TEXT NOT NULL, x INTEGER NOT NULL, z INTEGER NOT NULL, ground_y INTEGER NOT NULL, PRIMARY KEY(plot_id,x,z))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS tournament_entries (tournament_id TEXT NOT NULL, plot_id TEXT NOT NULL, owner_uuid TEXT NOT NULL, owner_name TEXT NOT NULL, entered_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tournament_id, plot_id))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS areas (id TEXT PRIMARY KEY, world TEXT NOT NULL, type TEXT NOT NULL, min_x INTEGER NOT NULL, min_z INTEGER NOT NULL, max_x INTEGER NOT NULL, max_z INTEGER NOT NULL)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, plot_id TEXT NOT NULL, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, amount REAL NOT NULL, kind TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
@@ -691,6 +692,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         try (PreparedStatement ps = db.prepareStatement("INSERT INTO plots(id,world,min_x,min_z,max_x,max_z,price) VALUES(?,?,?,?,?,?,?)")) {
             ps.setString(1, id); ps.setString(2, cityWorld.getName()); ps.setInt(3, minX); ps.setInt(4, minZ);
             ps.setInt(5, maxX); ps.setInt(6, maxZ); ps.setDouble(7, price); ps.executeUpdate();
+        }
+        try (PreparedStatement terrain = db.prepareStatement("INSERT INTO plot_terrain(plot_id,x,z,ground_y) VALUES(?,?,?,?)")) {
+            for(int x=minX;x<=maxX;x++) for(int z=minZ;z<=maxZ;z++) {
+                terrain.setString(1,id); terrain.setInt(2,x); terrain.setInt(3,z);
+                terrain.setInt(4,cityWorld.getHighestBlockYAt(x,z)); terrain.addBatch();
+            }
+            terrain.executeBatch();
+        } catch(Exception ex) {
+            try(PreparedStatement del=db.prepareStatement("DELETE FROM plots WHERE id=?")){del.setString(1,id);del.executeUpdate();}
+            try(PreparedStatement del=db.prepareStatement("DELETE FROM plot_terrain WHERE plot_id=?")){del.setString(1,id);del.executeUpdate();}
+            throw ex;
         }
         try {
             getOrCreatePlotRegion(plot);
@@ -1388,44 +1400,68 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             return;
         }
         try {
-            Plot plot = getPlot(id);
-            if (plot == null || plot.ownerUuid() == null || !plot.ownerUuid().equals(player.getUniqueId().toString())) {
-                player.sendMessage(msg("You do not own that plot.")); return;
-            }
-            RegionManager manager = regionManager(cityWorld);
-            ProtectedRegion region = manager == null ? null : manager.getRegion(plotRegionId(id));
-            if (region == null) { player.sendMessage(msg("Plot region is missing. Contact an admin.")); return; }
-            boolean ownerRemoved = region.getOwners().contains(player.getUniqueId());
-            if (ownerRemoved) region.getOwners().removePlayer(player.getUniqueId());
-            try {
-                db.setAutoCommit(false);
-                try (PreparedStatement ps = db.prepareStatement("UPDATE plots SET owner_uuid=NULL,owner_name=NULL WHERE id=? AND owner_uuid=?")) {
-                    ps.setString(1, plot.id()); ps.setString(2, player.getUniqueId().toString());
-                    if (ps.executeUpdate() != 1) throw new SQLException("Ownership update failed");
-                }
-                if (phase() == Phase.REGISTRATION) {
-                    try (PreparedStatement entry = db.prepareStatement("DELETE FROM tournament_entries WHERE tournament_id=? AND plot_id=?")) {
-                        entry.setString(1, tournamentId()); entry.setString(2, plot.id()); entry.executeUpdate();
+            Plot plot=getPlot(id);
+            if(plot==null || plot.ownerUuid()==null || !plot.ownerUuid().equals(player.getUniqueId().toString())) { player.sendMessage(msg("You do not own that plot.")); return; }
+            World world=Bukkit.getWorld(plot.world());
+            if(world==null){player.sendMessage(msg("Plot world is not loaded."));return;}
+            long expected=(long)(plot.maxX()-plot.minX()+1)*(plot.maxZ()-plot.minZ()+1);
+            Map<Long,Integer> terrain=new HashMap<>();
+            try(PreparedStatement ps=db.prepareStatement("SELECT x,z,ground_y FROM plot_terrain WHERE plot_id=?")){
+                ps.setString(1,plot.id());
+                try(ResultSet rs=ps.executeQuery()){
+                    while(rs.next()){
+                        long key=(((long)rs.getInt("x"))<<32)^(rs.getInt("z")&0xffffffffL);
+                        terrain.put(key,rs.getInt("ground_y"));
                     }
                 }
-                manager.saveChanges();
-                db.commit();
-            } catch (Exception ex) {
-                try { db.rollback(); } catch (SQLException ignored) { }
-                if (ownerRemoved) region.getOwners().addPlayer(player.getUniqueId());
-                try { manager.saveChanges(); } catch (Exception saveEx) { getLogger().severe("Could not restore WorldGuard owner for " + id + ": " + saveEx.getMessage()); }
+            }
+            if(terrain.size()!=expected){
+                player.sendMessage(msg("&cThis plot was created before safe terrain snapshots existed. No blocks were removed. Ask an admin to recreate it safely."));
+                return;
+            }
+            RegionManager manager=regionManager(world);
+            ProtectedRegion region=manager==null?null:manager.getRegion(plotRegionId(id));
+            if(region==null){player.sendMessage(msg("Plot WorldGuard region is missing. Contact staff."));return;}
+            int cleared=0;
+            for(int x=plot.minX();x<=plot.maxX();x++) for(int z=plot.minZ();z<=plot.maxZ();z++){
+                long key=(((long)x)<<32)^(z&0xffffffffL);
+                int ground=terrain.get(key);
+                int top=world.getHighestBlockYAt(x,z);
+                for(int y=top;y>ground;y--){
+                    Block block=world.getBlockAt(x,y,z);
+                    if(!block.getType().isAir()){block.setType(Material.AIR,false);cleared++;}
+                }
+            }
+            for(org.bukkit.entity.Entity entity:world.getEntities()){
+                Location loc=entity.getLocation();
+                if(loc.getBlockX()>=plot.minX()&&loc.getBlockX()<=plot.maxX()&&loc.getBlockZ()>=plot.minZ()&&loc.getBlockZ()<=plot.maxZ()
+                    &&(entity instanceof org.bukkit.entity.ItemFrame||entity instanceof org.bukkit.entity.Painting)) entity.remove();
+            }
+            boolean removed=region.getOwners().contains(player.getUniqueId());
+            if(removed)region.getOwners().removePlayer(player.getUniqueId());
+            try{
+                db.setAutoCommit(false);
+                try(PreparedStatement ps=db.prepareStatement("UPDATE plots SET owner_uuid=NULL,owner_name=NULL WHERE id=? AND owner_uuid=?")){
+                    ps.setString(1,plot.id());ps.setString(2,player.getUniqueId().toString());
+                    if(ps.executeUpdate()!=1)throw new SQLException("Plot ownership changed during release.");
+                }
+                try(PreparedStatement ps=db.prepareStatement("DELETE FROM tournament_entries WHERE plot_id=?")){ps.setString(1,plot.id());ps.executeUpdate();}
+                try(PreparedStatement ps=db.prepareStatement("DELETE FROM votes WHERE plot_id=?")){ps.setString(1,plot.id());ps.executeUpdate();}
+                try(PreparedStatement ps=db.prepareStatement("DELETE FROM scores WHERE plot_id=?")){ps.setString(1,plot.id());ps.executeUpdate();}
+                manager.saveChanges();db.commit();
+            }catch(Exception ex){
+                try{db.rollback();}catch(SQLException ignored){}
+                if(removed)region.getOwners().addPlayer(player.getUniqueId());
+                try{manager.saveChanges();}catch(Exception ignored){}
                 throw ex;
-            } finally {
-                try { db.setAutoCommit(true); } catch (SQLException ignored) { }
+            }finally{try{db.setAutoCommit(true);}catch(SQLException ignored){}}
+            if(getConfig().getBoolean("plots.refund-on-abandon",false)){
+                var refund=economy.depositPlayer(player,plot.price());
+                if(!refund.transactionSuccess())getLogger().severe("Refund failed for "+player.getName()+" plot "+id+": "+refund.errorMessage);
             }
-            if (getConfig().getBoolean("plots.refund-on-abandon", false)) {
-                var refund = economy.depositPlayer(player, plot.price());
-                if (!refund.transactionSuccess()) getLogger().severe("Refund failed for " + player.getName() + " plot " + id + ": " + refund.errorMessage);
-            }
-            mapRenderer.invalidate();
-            refreshPlotBoard(id);
-            player.sendMessage(msg("You released plot " + id + "."));
-        } catch (Exception ex) { player.sendMessage(msg("Could not release plot: " + ex.getMessage())); getLogger().warning("Abandon failed for " + id + ": " + ex.getMessage()); }
+            mapRenderer.invalidate();refreshPlotBoard(id);
+            player.sendMessage(msg("Plot "+id+" released. Cleared "+cleared+" blocks; original terrain preserved. Plot is available again."));
+        }catch(Exception ex){player.sendMessage(msg("Could not release plot: "+ex.getMessage()));getLogger().warning("Abandon failed for "+id+": "+ex.getMessage());}
     }
 
     private void teleportCitySpawn(Player player) {
