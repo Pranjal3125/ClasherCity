@@ -2501,15 +2501,16 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             else if(args.length==3&&args[0].equalsIgnoreCase("abandon"))out.add("confirm");
         }else if(n.equals("clcity")&&sender.hasPermission("clashercity.admin")){
             if(args.length==1)out.addAll(List.of("admin","help","phases","create","tp","wand","createplot","createroad","createpublic","border","roadbuild","parkbuild","setprice","deleteplot","setspawn","setlocation","removelocation","mapitem","mapwall","undo","planningcentre","plotboard","ceremony","start","phase","end","closevote","judge","score","winner","results","reward","info","ghostcorners","resetplotsroads"));
-            else if(args.length==2)switch(args[0].toLowerCase(Locale.ROOT)){
-                case "phase"->out.addAll(Arrays.stream(Phase.values()).map(x->x.name().toLowerCase(Locale.ROOT)).toList());
-                case "border","deleteplot","setprice","plotboard"->{try{for(Plot p:getPlots())out.add(p.id());}catch(SQLException ignored){}}
-                case "roadbuild","parkbuild"->{try{for(Area a:getAreas())out.add(a.id());}catch(SQLException ignored){}}
-                case "mapwall"->out.addAll(List.of("select","preview","create","update","remove"));
-                case "ceremony"->out.addAll(List.of("preview","start"));
-                case "ghostcorners"->out.addAll(List.of("on","off","status"));
-            };
-            else if(args.length==3&&List.of("border","roadbuild","parkbuild","plotboard").contains(args[0].toLowerCase(Locale.ROOT)))out.addAll(List.of("preview","create"));
+            else if(args.length==2){
+                switch(args[0].toLowerCase(Locale.ROOT)){
+                    case "phase"->out.addAll(Arrays.stream(Phase.values()).map(x->x.name().toLowerCase(Locale.ROOT)).toList());
+                    case "border","deleteplot","setprice","plotboard"->{try{for(Plot p:getPlots())out.add(p.id());}catch(SQLException ignored){}}
+                    case "roadbuild","parkbuild"->{try{for(Area a:getAreas())out.add(a.id());}catch(SQLException ignored){}}
+                    case "mapwall"->out.addAll(List.of("select","preview","create","update","remove"));
+                    case "ceremony"->out.addAll(List.of("preview","start"));
+                    case "ghostcorners"->out.addAll(List.of("on","off","status"));
+                }
+            } else if(args.length==3&&List.of("border","roadbuild","parkbuild","plotboard").contains(args[0].toLowerCase(Locale.ROOT)))out.addAll(List.of("preview","create"));
             else if(args.length==3&&List.of("deleteplot","undo","resetplotsroads").contains(args[0].toLowerCase(Locale.ROOT)))out.add("confirm");
         }else if(n.equals("city")&&args.length==1)out.add("visit");
         String prefix=args.length==0?"":args[args.length-1].toLowerCase(Locale.ROOT);
