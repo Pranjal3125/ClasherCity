@@ -18,8 +18,6 @@ import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Statistic;
 import org.bukkit.World;
-import org.bukkit.WorldCreator;
-import org.bukkit.WorldType;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.command.Command;
@@ -223,33 +221,23 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
         String worldName = getConfig().getString("city.world", "clasher_city");
         cityWorld = Bukkit.getWorld(worldName);
         if (cityWorld == null && getConfig().getBoolean("city.auto-load-world", true)) {
-            boolean useMultiverse=getConfig().getBoolean("city.multiverse.enabled",true);
-            boolean mvEnabled=getServer().getPluginManager().isPluginEnabled("Multiverse-Core");
-            if(useMultiverse && !mvEnabled) {
-                throw new IllegalStateException("Multiverse-Core is required by city.multiverse.enabled. Install Multiverse-Core or disable city.multiverse.enabled.");
-            }
-            if(useMultiverse) {
-                java.io.File worldFolder=new java.io.File(Bukkit.getWorldContainer(),worldName);
-                boolean folderExists=worldFolder.isDirectory();
-                boolean imported=folderExists
-                        ? Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"mv import "+worldName+" normal")
-                        : Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"mv create "+worldName+" normal --world-type flat --no-structures");
+            java.io.File worldFolder=new java.io.File(Bukkit.getWorldContainer(),worldName);
+            boolean folderExists=worldFolder.isDirectory();
+            if(folderExists) {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"mv import "+worldName+" normal");
                 cityWorld=Bukkit.getWorld(worldName);
-                if(cityWorld==null && folderExists) {
+                if(cityWorld==null) {
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"mv load "+worldName);
                     cityWorld=Bukkit.getWorld(worldName);
                 }
-                if(cityWorld==null) {
-                    throw new IllegalStateException("Multiverse-Core did not load/create '"+worldName+"'. Check console output and ensure Multiverse permissions/commands are available.");
-                }
-                getLogger().info("City world is managed by Multiverse-Core: "+worldName+(folderExists?" (imported existing folder if needed)":" (created as flat world without structures)"));
             } else {
-                WorldCreator creator = new WorldCreator(worldName)
-                        .type(WorldType.FLAT)
-                        .environment(World.Environment.NORMAL)
-                        .generateStructures(false);
-                cityWorld = Bukkit.createWorld(creator);
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(),"mv create "+worldName+" normal --world-type flat --no-structures");
+                cityWorld=Bukkit.getWorld(worldName);
             }
+            if(cityWorld==null) {
+                throw new IllegalStateException("Multiverse-Core failed to import/load/create '"+worldName+"'. Check the Multiverse-Core console output.");
+            }
+            getLogger().info("City world is managed exclusively by Multiverse-Core: "+worldName+(folderExists?" (existing folder imported/loaded)":" (new flat world created without structures)"));
         }
         if (cityWorld == null) throw new IllegalStateException("Could not load/create city world " + worldName);
         cityWorld.setAutoSave(true);

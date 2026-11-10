@@ -6,8 +6,8 @@ author: Clasher Network
 description: Automated city plots and building tournament system.
 website: https://clashernetwork.example
 load: POSTWORLD
-depend: [WorldGuard, Vault]
-softdepend: [Multiverse-Core, FastAsyncWorldEdit, SmartSpawner, Essentials, DecentHolograms]
+depend: [WorldGuard, Vault, Multiverse-Core]
+softdepend: [FastAsyncWorldEdit, SmartSpawner, Essentials, DecentHolograms]
 commands:
   clcity:
     description: ClasherCity administrator controls

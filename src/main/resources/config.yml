@@ -2,8 +2,6 @@
 city:
   world: clasher_city
   auto-load-world: true
-  multiverse:
-    enabled: true # Create/import/load the city world through Multiverse-Core
   spawn-set: false
   spawn:
     x: 0.5
