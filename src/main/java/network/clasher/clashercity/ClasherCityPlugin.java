@@ -1569,20 +1569,18 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             World world=Bukkit.getWorld(plot.world()); if(world==null)return;
             clearOwnerPlotVisuals(player);
             final Plot selected=plot;
-            final int minY=Math.min(world.getHighestBlockYAt(plot.minX(),plot.minZ()),world.getHighestBlockYAt(plot.maxX(),plot.maxZ()))+1;
-            final int y=minY;
             BukkitTask task=new BukkitRunnable(){
                 int ticks=0;
                 @Override public void run(){
                     if(!player.isOnline() || !player.getWorld().equals(world) || ticks>=300){cancel();plotOutlineTasks.remove(player.getUniqueId());return;}
                     Particle particle=Particle.END_ROD;
                     for(int x=selected.minX();x<=selected.maxX();x++){
-                        player.spawnParticle(particle,new Location(world,x+0.5,y+0.15,selected.minZ()+0.5),1,0,0,0,0);
-                        player.spawnParticle(particle,new Location(world,x+0.5,y+0.15,selected.maxZ()+0.5),1,0,0,0,0);
+                        player.spawnParticle(particle,new Location(world,x+0.5,world.getHighestBlockYAt(x,selected.minZ())+1.15,selected.minZ()+0.5),2,0.05,0.05,0.05,0);
+                        player.spawnParticle(particle,new Location(world,x+0.5,world.getHighestBlockYAt(x,selected.maxZ())+1.15,selected.maxZ()+0.5),2,0.05,0.05,0.05,0);
                     }
                     for(int z=selected.minZ();z<=selected.maxZ();z++){
-                        player.spawnParticle(particle,new Location(world,selected.minX()+0.5,y+0.15,z+0.5),1,0,0,0,0);
-                        player.spawnParticle(particle,new Location(world,selected.maxX()+0.5,y+0.15,z+0.5),1,0,0,0,0);
+                        player.spawnParticle(particle,new Location(world,selected.minX()+0.5,world.getHighestBlockYAt(selected.minX(),z)+1.15,z+0.5),2,0.05,0.05,0.05,0);
+                        player.spawnParticle(particle,new Location(world,selected.maxX()+0.5,world.getHighestBlockYAt(selected.maxX(),z)+1.15,z+0.5),2,0.05,0.05,0.05,0);
                     }
                     ticks+=5;
                 }
@@ -1601,7 +1599,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             int x=corner[0],z=corner[1],y=world.getHighestBlockYAt(x,z)+1;
             Location loc=new Location(world,x,y,z);
             originals.put(loc,world.getBlockAt(x,y,z).getBlockData());
-            player.sendBlockChange(loc,Bukkit.createBlockData(Material.SEA_LANTERN));
+            player.sendBlockChange(loc,Bukkit.createBlockData(getConfig().getString("plot-visuals.ghost-corner-material","SEA_LANTERN")));
+            player.spawnParticle(Particle.END_ROD,loc.clone().add(0.5,0.5,0.5),12,0.25,0.25,0.25,0.01);
             locations.add(loc);
         }
         new BukkitRunnable(){
@@ -1711,6 +1710,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         inv.setItem(26,menuItem(Material.BARRIER,"&cClose",List.of("&7Close help."),"close",null));
         p.openInventory(inv);
     }
+
     private void openMainMenu(Player player) {
         MenuHolder holder = new MenuHolder("MAIN", 0);
         Inventory inv = holder.create(27, color("&8✦  CLASHERCITY  &8•  &7CITY PORTAL"));
@@ -2481,6 +2481,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 case "close" -> player.closeInventory();
                 case "open_help" -> openHelpMenu(player);
                 case "help_home" -> openMainMenu(player);
+                case "help_back" -> openHelpMenu(player);
                 case "help_back" -> openHelpMenu(player);
                 case "help_0","help_1","help_2","help_3","help_4","help_5","help_6","help_7","help_8","help_9","help_10" -> showHelpTopic(player,Integer.parseInt(action.substring(5)));
                 case "visit" -> { player.closeInventory(); teleportCitySpawn(player); }
