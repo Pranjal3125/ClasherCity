@@ -742,36 +742,33 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                 boolean pillar = corner || (x % 6 == 0 && (z == plot.minZ() || z == plot.maxZ()))
                         || (z % 6 == 0 && (x == plot.minX() || x == plot.maxX()));
                 for (int dy = 1; dy <= height; dy++) {
-                    Material material;
-                    if (pillar) {
-                        material = dy == 1 ? Material.POLISHED_BLACKSTONE_BRICKS
-                                : (dy == height ? Material.CHISELED_QUARTZ_BLOCK : Material.SMOOTH_QUARTZ);
-                    } else {
-                        material = dy == 1 ? Material.POLISHED_BLACKSTONE_BRICK_WALL
-                                : (dy == 2 ? Material.GLASS_PANE : Material.SMOOTH_QUARTZ_SLAB);
-                    }
+                    // Full blocks are used throughout so every fence section visually joins its neighbours.
+                    Material material = dy == 1 ? Material.POLISHED_BLACKSTONE_BRICKS
+                            : (pillar ? (dy == height ? Material.CHISELED_QUARTZ_BLOCK : Material.SMOOTH_QUARTZ)
+                            : Material.GLASS);
                     var block = cityWorld.getBlockAt(x, groundY + dy, z);
-                    if (block.getType() == Material.AIR || block.isPassable()) eligible++;
-                    else skipped++;
-                    if (create && (block.getType() == Material.AIR || block.isPassable())) {
+                    boolean clear = block.getType().isAir() || block.isPassable();
+                    if (clear) eligible++; else skipped++;
+                    if (create && clear) {
                         placeGeneratedBlock(changes,block,material);
                         changed++;
                     }
                 }
                 if (pillar) {
-                    var accent = cityWorld.getBlockAt(x, groundY + height + 1, z);
-                    if (accent.getType() == Material.AIR || accent.isPassable()) {
+                    var cap = cityWorld.getBlockAt(x, groundY + height + 1, z);
+                    boolean clear = cap.getType().isAir() || cap.isPassable();
+                    if (clear) {
                         eligible++;
-                        if (create) { placeGeneratedBlock(changes,accent,Material.SEA_LANTERN); changed++; }
+                        if (create) { placeGeneratedBlock(changes,cap,Material.SEA_LANTERN); changed++; }
                     } else skipped++;
                 }
             }
         }
         if (!create) {
-            player.sendMessage(msg("Luxury quartz-and-blackstone boundary preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks available, &c" + skipped + " &aoccupied. Entrance: &f" + entranceWidth + " blocks."));
+            player.sendMessage(msg("Connected luxury boundary preview for &e" + plot.id() + "&a: &f" + eligible + " &ablocks available, &c" + skipped + " &aoccupied. Full-block glass panels, continuous blackstone base and quartz pillars. Entrance: &f" + entranceWidth + " blocks."));
         } else {
             persistWorldgenOperation(operationId,player,"PLOT_BORDER",changes);
-            player.sendMessage(msg("Luxury boundary built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks. Undo ID: &e"+operationId));
+            player.sendMessage(msg("Connected luxury boundary built for &e" + plot.id() + "&a. Placed &f" + changed + " &ablocks; safely skipped &c" + skipped + "&a occupied blocks. Undo ID: &e"+operationId));
         }
     }
 
@@ -853,19 +850,27 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener {
                     int x = alongX ? area.minX() + along : area.minX() + side;
                     int z = alongX ? area.minZ() + side : area.minZ() + along;
                     int baseY = cityWorld.getHighestBlockYAt(x, z) + 1;
+                    // Check the complete 3-wide lamp footprint before placing any part of it.
                     boolean clear = true;
-                    for (int dy = 0; dy <= 5; dy++) if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
+                    for (int dy = 0; dy <= 5; dy++) {
+                        if (!cityWorld.getBlockAt(x, baseY + dy, z).isPassable()) clear = false;
+                    }
+                    for (int sideOffset : new int[]{-1, 1}) {
+                        if (!cityWorld.getBlockAt(x + sideOffset, baseY + 4, z).isPassable()
+                                || !cityWorld.getBlockAt(x + sideOffset, baseY + 5, z).isPassable()) clear = false;
+                    }
                     lampCandidates++;
                     if (create && clear) {
-                        // Luxury lamp: blackstone plinth, quartz column, projecting crown and warm lantern.
+                        // Connected luxury lamp: solid plinth and quartz shaft, full-block crossarm,
+                        // central sea-lantern crown and warm lanterns suspended at both ends.
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY,z),Material.POLISHED_BLACKSTONE_BRICKS);
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+1,z),Material.QUARTZ_PILLAR);
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+2,z),Material.QUARTZ_PILLAR);
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+3,z),Material.QUARTZ_PILLAR);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+4,z),Material.SMOOTH_QUARTZ_SLAB);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+4,z),Material.SMOOTH_QUARTZ);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+4,z),Material.SMOOTH_QUARTZ);
+                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+4,z),Material.SMOOTH_QUARTZ);
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x,baseY+5,z),Material.SEA_LANTERN);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+4,z),Material.SMOOTH_QUARTZ_SLAB);
-                        placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+4,z),Material.SMOOTH_QUARTZ_SLAB);
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x+1,baseY+5,z),Material.LANTERN);
                         placeGeneratedBlock(changes,cityWorld.getBlockAt(x-1,baseY+5,z),Material.LANTERN);
                         lampsPlaced++;
