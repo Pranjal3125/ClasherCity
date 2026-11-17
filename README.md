@@ -1,3 +1,30 @@
+<div align="center">
+
+# ClasherCity
+
+### City plots · Building competitions · Player voting · Judge scoring
+
+A Paper plugin project for a dedicated city world with protected plots and configurable building tournaments.
+
+![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk) ![Platform](https://img.shields.io/badge/Platform-Paper-313131?logo=minecraft) ![Storage](https://img.shields.io/badge/Storage-SQLite-blue?logo=sqlite)
+
+[Source](https://github.com/Pranjal3125/ClasherCity) · [Issues](https://github.com/Pranjal3125/ClasherCity/issues)
+
+</div>
+
+> **Status:** 1.0.0 source project. Build and test on a staging server before live deployment; production deployment is not verified here.
+
+## Documentation
+
+- [Build and installation](#build-the-jar)
+- [Admin setup](#admin-setup)
+- [Protection model](#worldguard-protection-model)
+- [Commands](#player-commands)
+- [Tournament workflow](#tournament-workflow)
+- [Pre-deployment checklist](#test-checklist-before-live-deployment)
+
+---
+
 # ClasherCity 1.0.0 — Clasher Network
 
 ClasherCity is a Paper plugin for a separate flat city world, paid building plots, WorldGuard protection, physical/GUI maps, tournament phases, public voting, judge scoring, leaderboard calculation and configurable console-command rewards.
