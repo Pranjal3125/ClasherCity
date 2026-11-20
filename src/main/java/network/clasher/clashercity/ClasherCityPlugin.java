@@ -2115,8 +2115,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         Inventory inv = holder.create(54, color("&8✦  CITY MARKETPLACE  &8•  &7" + (page + 1) + "/" + (maxPage + 1)));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
         long available = plots.stream().filter(p -> p.ownerUuid() == null && !cleanupPending.contains(p.id().toLowerCase(Locale.ROOT))).count();
-        long locked = cleanupPending.size();
-        inv.setItem(4, menuItem(Material.EMERALD, "&a&lPROPERTY MARKETPLACE", List.of("&8CLASHERCITY REAL ESTATE", "", "&7Registered properties: &f" + plots.size(), "&7Available: &a" + available, "&7Cleanup locked: &6" + locked, "&7Purchased: &c" + plots.stream().filter(p -> p.ownerUuid() != null).count(), "", "&8Select a property to inspect details."), "none", null));
+        long lockedCount = cleanupPending.size();
+        inv.setItem(4, menuItem(Material.EMERALD, "&a&lPROPERTY MARKETPLACE", List.of("&8CLASHERCITY REAL ESTATE", "", "&7Registered properties: &f" + plots.size(), "&7Available: &a" + available, "&7Cleanup locked: &6" + lockedCount, "&7Purchased: &c" + plots.stream().filter(p -> p.ownerUuid() != null).count(), "", "&8Select a property to inspect details."), "none", null));
         int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
         int start = page * perPage;
         for (int i = 0; i < slots.length && start + i < plots.size(); i++) {
