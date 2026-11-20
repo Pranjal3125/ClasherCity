@@ -1247,6 +1247,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         Plot plot = getPlot(id);
         if (plot == null) throw new IllegalArgumentException("Plot not found.");
         if (plot.ownerUuid() != null) throw new IllegalArgumentException("Owned plots cannot be deleted. Ask the owner to abandon it first.");
+        if (isPlotCleanupPending(plot.id())) throw new IllegalArgumentException("This plot has pending terrain cleanup. Run /clcity cleanupplot " + plot.id() + " confirm before deleting it.");
         RegionManager manager = regionManager(cityWorld);
         String regionId = plotRegionId(id);
         ProtectedRegion removedRegion = manager == null ? null : manager.getRegion(regionId);
@@ -1255,6 +1256,12 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             db.setAutoCommit(false);
             try (PreparedStatement entry = db.prepareStatement("DELETE FROM tournament_entries WHERE plot_id=?")) {
                 entry.setString(1, id); entry.executeUpdate();
+            }
+            try (PreparedStatement votes = db.prepareStatement("DELETE FROM votes WHERE plot_id=?")) {
+                votes.setString(1, id); votes.executeUpdate();
+            }
+            try (PreparedStatement scores = db.prepareStatement("DELETE FROM scores WHERE plot_id=?")) {
+                scores.setString(1, id); scores.executeUpdate();
             }
             try (PreparedStatement terrain = db.prepareStatement("DELETE FROM plot_terrain WHERE plot_id=?")) { terrain.setString(1,id); terrain.executeUpdate(); }
             try (PreparedStatement ps = db.prepareStatement("DELETE FROM plots WHERE id=? AND owner_uuid IS NULL")) {
