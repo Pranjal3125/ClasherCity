@@ -2471,8 +2471,16 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         if (plot == null || plot.ownerUuid() == null || !isTournamentEntry(plot.id())) { sender.sendMessage(msg("Owned tournament entry not found.")); return; }
         String category = args[2].toLowerCase(Locale.ROOT);
         Integer max = scoreCategories().get(category);
-        if (max == null) { sender.sendMessage(msg("Categories: creativity, exterior, interior, detailing, theme")); return; }
-        int score = Integer.parseInt(args[3]);
+        if (max == null) {
+            sender.sendMessage(msg("Valid categories: " + String.join(", ", scoreCategories().keySet())));
+            return;
+        }
+        final int score;
+        try { score = Integer.parseInt(args[3]); }
+        catch (NumberFormatException ex) {
+            sender.sendMessage(msg("Marks must be a whole number between 0 and " + max + "."));
+            return;
+        }
         if (score < 0 || score > max) { sender.sendMessage(msg("Maximum marks for " + category + " is " + max + ".")); return; }
         try (PreparedStatement ps = db.prepareStatement("INSERT INTO scores(tournament_id,judge_uuid,plot_id,category,score,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(tournament_id,judge_uuid,plot_id,category) DO UPDATE SET score=excluded.score,updated_at=CURRENT_TIMESTAMP")) {
             ps.setString(1, tournamentId()); ps.setString(2, judgeId.toString()); ps.setString(3, plot.id()); ps.setString(4, category); ps.setInt(5, score); ps.executeUpdate();
