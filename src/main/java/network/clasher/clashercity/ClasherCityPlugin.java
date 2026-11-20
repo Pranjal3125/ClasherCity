@@ -1688,24 +1688,32 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
     }
     private void showHelpTopic(Player p,int i){
         String[] titles={"Getting Started","Plot Marketplace","My Property","Building Guide","Championship","Voting Guide","Judging & Results","Rewards","City Map & Travel","Player Commands","Rules & FAQ"};
-        String[] body={
-            "Use /city for the city portal and /plots to browse properties.",
-            "Choose a green available plot in /plots. Check its price and click PURCHASE PROPERTY. Purchases open during REGISTRATION.",
-            "Use /plot home [plot-id]. Visit others with /plot visit <player> if visits are enabled.",
-            "Build only on a plot you own and only during BUILDING. Roads and public areas are protected.",
-            "Phases: SETUP -> REGISTRATION -> BUILDING -> VOTING -> RESULTS. Follow announcements for next steps.",
-            "During VOTING, open /buildvote and choose one eligible plot. You cannot vote for your own entry or vote twice.",
-            "Admins appoint judges. Judges submit marks using /clcity score <plot> <category> <marks>. View rankings with /buildtop.",
-            "Final standings appear with /buildtop. Admins can start the podium ceremony using /clcity ceremony start.",
-            "Use /citymap for the atlas and /city for the city portal and destinations.",
-            "Commands: /city, /plots, /plot home, /plot info <id>, /plot visit <player>, /plot visits <on|off>, /buildvote, /buildtop, /clcityhelp.",
-            "Respect ownership, event phases and staff instructions. Griefing and voting abuse are not allowed."
+        String[][] body={
+            {"Start with /city to open the city portal.","Use /plots to browse registered properties.","Use /clcityhelp whenever you need these guides.","Ask staff if the city spawn or a feature is unavailable."},
+            {"Open /plots and select an available plot.","Review the plot ID, ownership and displayed price.","Use the purchase option to confirm your selection.","Purchases are available during REGISTRATION only.","If a purchase fails, contact staff; do not pay twice."},
+            {"Use /plot home to teleport to your property.","Use /plot home <plot-id> for a specific owned plot.","Use /plot info <plot-id> to inspect a property.","Use /plot visit <player> to visit another player.","Use /plot visits on or off to control visits.","Use /plot abandon <plot-id> confirm only if leaving it."},
+            {"Build inside the boundaries of your own plot.","Follow the current tournament phase and theme.","Roads and public areas are not player build areas.","Use /plot enter <plot-id> to enter a registered plot.","Do not bypass protection or modify another plot."},
+            {"Tournament phases: SETUP, REGISTRATION, BUILDING, VOTING, RESULTS.","Staff announce when each phase changes.","Registration is for plot entry and purchases.","Build only while the BUILDING phase is active.","Check /buildtop for published standings."},
+            {"During VOTING, open /buildvote to choose an entry.","You may submit only one vote per tournament.","You cannot vote for your own entry.","Follow any eligibility or playtime requirement shown in-game.","If the voting menu is unavailable, check the current phase."},
+            {"Judges are appointed by city staff.","Judges use /clcity score <plot> <category> <marks>.","Categories and maximum marks are shown by command hints.","Use /buildtop to view the leaderboard and results.","Only completed judge scorecards count in final scoring."},
+            {"Final standings are published with /buildtop.","Staff manage reward distribution and retry failed payouts.","For a missing reward, contact an admin with your IGN.","Do not repeatedly claim or request the same reward."},
+            {"Use /citymap to open the city atlas.","Use /city for spawn, marketplace and destinations.","Use /plot home to return to your property.","Some destinations may be configured or removed by staff."},
+            {"Player: /city, /plots, /citymap, /clcityhelp.","Plot: /plot claim <id>, /plot enter <id>, /plot home [id].","Plot info: /plot info <id>, /plot visit <player>.","Visits: /plot visits <on|off>, /plot abandon <id> confirm.","Tournament: /buildvote and /buildtop.","Type a command and press TAB for available suggestions."},
+            {"Respect plot ownership, protection and tournament phases.","Do not grief, exploit voting or interfere with judging.","Do not build on roads or public areas without permission.","Follow staff instructions and the event rules.","Report bugs or disputed results to city staff."}
         };
         if(i<0||i>=titles.length)return;
         MenuHolder holder=new MenuHolder("HELP_TOPIC",i);
         Inventory inv=holder.create(27,color("&8✦ HELP &8• &b"+titles[i]));
         frameMenu(inv,Material.BLACK_STAINED_GLASS_PANE);
-        inv.setItem(13,menuItem(Material.BOOK,"&b&l"+titles[i],List.of("&8CLASHERCITY GUIDE","","&f"+body[i],"","&7Use Back to browse other topics."),"none",null));
+        List<String> lore=new ArrayList<>();
+        lore.add("&8CLASHERCITY GUIDE");
+        lore.add("");
+        for(String line:body[i]) {
+            lore.add("&f"+line);
+        }
+        lore.add("");
+        lore.add("&7Use Back to browse other topics.");
+        inv.setItem(13,menuItem(Material.BOOK,"&b&l"+titles[i],lore,"none",null));
         inv.setItem(18,menuItem(Material.ARROW,"&fBack to Help",List.of("&7Return to all help categories."),"help_back",null));
         inv.setItem(26,menuItem(Material.BARRIER,"&cClose",List.of("&7Close help."),"close",null));
         p.openInventory(inv);
