@@ -2232,9 +2232,12 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
 
     private void closeTournament(CommandSender sender) throws Exception {
         if (phase() == Phase.RESULTS) { sender.sendMessage(msg("Results have already been finalized.")); showResults(sender); return; }
-        setPhase(Phase.RESULTS);
+        // Calculate first. A database/scoring error must not permanently close voting
+        // or move the tournament into RESULTS without a valid result set.
         List<ResultRow> results = calculateResults();
-        broadcast(msg("Phase " + phase().name() + " has ended."));
+        Phase previous = phase();
+        setPhase(Phase.RESULTS);
+        broadcast(msg("Phase " + previous.name() + " has ended."));
         broadcast(msg("New phase: RESULTS. Voting has closed and final results are being announced."));
         if (results.isEmpty()) {
             sender.sendMessage(msg("No owned plots were available for final scoring."));
