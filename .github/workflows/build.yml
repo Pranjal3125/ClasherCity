@@ -16,5 +16,5 @@ jobs:
         run: mvn -U clean package
       - uses: actions/upload-artifact@v4
         with:
-          name: ClasherCity-1.1.1
+          name: ClasherCity-1.1.2
           path: target/ClasherCity-1.1.1.jar
