@@ -3025,8 +3025,9 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
     public void onBlockInteract(PlayerInteractEvent event) {
         if (event.getClickedBlock() == null || !isCityWorld(event.getClickedBlock().getWorld())) return;
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
-        if (event.getItem() != null && event.getItem().getType() != Material.AIR) return;
-        if (!event.getPlayer().hasPermission("clashercity.bypass") && !isPlotOwner(event.getPlayer(), event.getClickedBlock().getLocation())) {
+        // Match block/entity placement rules: only an entered plot owner during BUILDING (or bypass)
+        // may interact with blocks. Do not let held items skip this protection check.
+        if (!mayBuild(event.getPlayer(), event.getClickedBlock().getLocation())) {
             event.setCancelled(true);
         }
     }
