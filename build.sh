@@ -11,4 +11,4 @@ if ! command -v mvn >/dev/null 2>&1; then
   exit 1
 fi
 mvn -U clean package
-echo "Build complete: target/ClasherCity-1.0.0.jar"
+echo "Build complete: target/ClasherCity-1.1.2.jar"
