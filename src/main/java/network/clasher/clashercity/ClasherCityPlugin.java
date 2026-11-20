@@ -322,8 +322,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         String publicPrefix = getConfig().getString("protection.public-region-prefix", "public_").toLowerCase(Locale.ROOT);
         for (String regionId : new ArrayList<>(manager.getRegions().keySet())) {
             String normalizedId = regionId.toLowerCase(Locale.ROOT);
-            boolean managedPlot = normalizedId.startsWith(plotPrefix);
-            boolean managedArea = normalizedId.startsWith(roadPrefix) || normalizedId.startsWith(publicPrefix);
+            if ("__global__".equals(normalizedId)) continue;
+            boolean managedPlot = !plotPrefix.isBlank() && normalizedId.startsWith(plotPrefix);
+            boolean managedArea = (!roadPrefix.isBlank() && normalizedId.startsWith(roadPrefix))
+                    || (!publicPrefix.isBlank() && normalizedId.startsWith(publicPrefix));
             if ((managedPlot && !expectedPlotRegions.contains(normalizedId))
                     || (managedArea && !expectedAreaRegions.contains(normalizedId))) {
                 manager.removeRegion(regionId);
