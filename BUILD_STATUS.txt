@@ -26,7 +26,7 @@ Linux/macOS:
     ./build.sh
 
 VERIFICATION LIMITS
-This commit updates release metadata and build/repository hygiene only. It does not claim that a new JAR was compiled or that the plugin was runtime-tested. A successful GitHub Actions run or local Maven BUILD SUCCESS is required before distributing the 1.1.2 JAR.
+The successful CI run above confirms the source compiled and the JAR artifact was packaged. It does not mean the plugin was runtime-tested on a Paper server; follow the test checklist before live deployment.
 
 DEPLOYMENT SAFETY
 - Install on a TEST server first, not the live Clasher Network server.
