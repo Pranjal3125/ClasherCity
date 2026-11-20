@@ -1453,7 +1453,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             if (plot.ownerUuid() != null) { player.sendMessage(msg("That plot is already sold.")); return; }
             if (isPlotCleanupPending(plot.id())) { player.sendMessage(msg("&cThis plot is temporarily unavailable while staff complete its terrain cleanup.")); return; }
 
-            int maxPlots = getConfig().getInt("plots.max-per-player", 2);
+            int maxPlots = Math.max(1, getConfig().getInt("plots.max-per-player", 2));
             if (!getConfig().getBoolean("plots.allow-multiple", true)) maxPlots = 1;
             try (PreparedStatement ps = db.prepareStatement("SELECT COUNT(*) FROM plots WHERE owner_uuid=?")) {
                 ps.setString(1, player.getUniqueId().toString());
@@ -1806,7 +1806,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 player.sendMessage(msg("You must own this plot to enter it in the tournament.")); return;
             }
             if (isTournamentEntry(plot.id())) { player.sendMessage(msg("This plot is already entered in the current tournament.")); return; }
-            int maxEntries = getConfig().getInt("plots.max-per-player", 2);
+            int maxEntries = Math.max(1, getConfig().getInt("plots.max-per-player", 2));
             if (!getConfig().getBoolean("plots.allow-multiple", true)) maxEntries = 1;
             try (PreparedStatement count = db.prepareStatement("SELECT COUNT(*) FROM tournament_entries WHERE tournament_id=? AND owner_uuid=?")) {
                 count.setString(1, tournamentId()); count.setString(2, player.getUniqueId().toString());
