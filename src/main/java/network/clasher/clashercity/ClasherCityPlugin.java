@@ -1336,7 +1336,16 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         catch (SQLException ex) { player.sendMessage(msg("Database error.")); return; }
         if (plot == null) { player.sendMessage(msg("Plot not found.")); return; }
         if (plot.ownerUuid() != null) { player.sendMessage(msg("That plot is already owned by " + plot.ownerName() + ".")); return; }
-        if (isPlotCleanupPending(plot.id())) { player.sendMessage(msg("&cThis plot is temporarily unavailable while staff complete its terrain cleanup.")); return; }
+        try {
+            if (isPlotCleanupPending(plot.id())) {
+                player.sendMessage(msg("&cThis plot is temporarily unavailable while staff complete its terrain cleanup."));
+                return;
+            }
+        } catch (SQLException ex) {
+            getLogger().warning("Could not verify cleanup lock for plot " + plot.id() + ": " + ex.getMessage());
+            player.sendMessage(msg("&cCould not verify plot availability. Please try again later."));
+            return;
+        }
         if (phase() != Phase.REGISTRATION) { player.sendMessage(msg("Plot purchases are only open during registration.")); return; }
         MenuHolder holder = new MenuHolder("CONFIRM", 0);
         Inventory inv = holder.create(27, color("&8Confirm plot purchase"));
