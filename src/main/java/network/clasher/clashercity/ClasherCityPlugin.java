@@ -2555,12 +2555,31 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "";
 
         if (name.equals("plot")) {
-            if (args.length == 1) out.addAll(List.of("claim", "enter", "home", "outline", "visit", "visits", "info", "abandon"));
-            else if (args.length == 2 && List.of("claim", "enter", "info", "abandon").contains(sub)) {
-                try { for (Plot plot : getPlots()) out.add(plot.id()); } catch (SQLException ignored) { }
-            } else if (args.length == 2 && sub.equals("visits")) out.addAll(List.of("on", "off"));
-            else if (args.length == 2 && sub.equals("outline")) out.add("off");
-            else if (args.length == 3 && sub.equals("abandon")) out.add("confirm");
+            if (args.length == 1) {
+                out.addAll(List.of("claim", "enter", "home", "outline", "visit", "visits", "info", "abandon"));
+            } else if (args.length == 2) {
+                switch (sub) {
+                    case "claim" -> {
+                        try { for (Plot plot : getPlots()) if (plot.ownerUuid() == null) out.add(plot.id()); }
+                        catch (SQLException ignored) { }
+                    }
+                    case "enter", "info", "abandon" -> {
+                        try { for (Plot plot : getPlots()) out.add(plot.id()); }
+                        catch (SQLException ignored) { }
+                    }
+                    case "home" -> {
+                        if (sender instanceof Player player) {
+                            try { for (Plot plot : getPlots()) if (player.getUniqueId().equals(plot.ownerUuid())) out.add(plot.id()); }
+                            catch (SQLException ignored) { }
+                        }
+                    }
+                    case "visit" -> Bukkit.getOnlinePlayers().forEach(player -> out.add(player.getName()));
+                    case "visits" -> out.addAll(List.of("on", "off"));
+                    case "outline" -> out.add("off");
+                }
+            } else if (args.length == 3 && sub.equals("abandon")) {
+                out.add("confirm");
+            }
         } else if (name.equals("clcity") && sender.hasPermission("clashercity.admin")) {
             if (args.length == 1) {
                 out.addAll(List.of("admin", "help", "phases", "create", "tp", "wand", "createplot", "createroad", "createpublic",
