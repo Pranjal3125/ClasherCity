@@ -78,6 +78,7 @@ Only give this to trusted admins.
 - `/city visit` — teleport to the city spawn
 - `/plots` — plot browser
 - `/citymap` — GUI city map
+- `/clcityhelp` — player help and command guide
 - `/plot claim <id>` — opens a purchase confirmation GUI
 - `/plot enter <id>` — register an already-owned plot for the current tournament
 - `/plot home [id]` — teleport to an owned plot
@@ -153,7 +154,18 @@ If commands were blank when the results were finalized, set them in config and r
 - `/clcity createpublic <id>`
 - `/clcity setprice <id> <price>`
 - `/clcity deleteplot <id> confirm` (unowned plots only)
+- `/clcity cleanupplot <id> confirm` (recover an interrupted plot-terrain cleanup)
+- `/clcity undo <operation-id> confirm` (undo a saved world-generation operation; changed blocks are preserved)
+- `/clcity resetplotsroads confirm` (destructive bulk removal of registered plots and roads; back up the world and plugin data first)
 - `/clcity setspawn`
+- `/clcity border <plot-id> <preview|create>`
+- `/clcity roadbuild <road-id> <preview|create>`
+- `/clcity parkbuild <public-area-id> <preview|create>`
+- `/clcity planningcentre <preview|create>`
+- `/clcity plotboard <plot-id> <preview|create>`
+- `/clcity mapwall <select|preview|create|update|remove>`
+- `/clcity ceremony <preview|start>`
+- `/clcity ghostcorners <on|off|status>`
 - `/clcity mapitem`
 - `/clcity start [name]`
 - `/clcity phase <phase>`
