@@ -2541,30 +2541,62 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
 
 
     @Override
-    public List<String> onTabComplete(CommandSender sender,Command command,String alias,String[] args){
-        String n=command.getName().toLowerCase(Locale.ROOT);List<String> out=new ArrayList<>();
-        if(n.equals("plot")){
-            if(args.length==1)out.addAll(List.of("claim","enter","home","outline","visit","visits","info","abandon"));
-            else if(args.length==2&&List.of("claim","enter","info","abandon").contains(args[0].toLowerCase(Locale.ROOT)))try{for(Plot p:getPlots())out.add(p.id());}catch(SQLException ignored){}
-            else if(args.length==2&&args[0].equalsIgnoreCase("visits"))out.addAll(List.of("on","off"));
-            else if(args.length==2&&args[0].equalsIgnoreCase("outline"))out.add("off");
-            else if(args.length==3&&args[0].equalsIgnoreCase("abandon"))out.add("confirm");
-        }else if(n.equals("clcity")&&sender.hasPermission("clashercity.admin")){
-            if(args.length==1)out.addAll(List.of("admin","help","phases","create","tp","wand","createplot","createroad","createpublic","border","roadbuild","parkbuild","setprice","deleteplot","setspawn","setlocation","removelocation","mapitem","mapwall","undo","planningcentre","plotboard","ceremony","start","phase","end","closevote","judge","score","winner","results","reward","info","ghostcorners","resetplotsroads"));
-            else if(args.length==2){
-                switch(args[0].toLowerCase(Locale.ROOT)){
-                    case "phase"->out.addAll(Arrays.stream(Phase.values()).map(x->x.name().toLowerCase(Locale.ROOT)).toList());
-                    case "border","deleteplot","setprice","plotboard"->{try{for(Plot p:getPlots())out.add(p.id());}catch(SQLException ignored){}}
-                    case "roadbuild","parkbuild"->{try{for(Area a:getAreas())out.add(a.id());}catch(SQLException ignored){}}
-                    case "mapwall"->out.addAll(List.of("select","preview","create","update","remove"));
-                    case "ceremony"->out.addAll(List.of("preview","start"));
-                    case "ghostcorners"->out.addAll(List.of("on","off","status"));
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        String name = command.getName().toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "";
+
+        if (name.equals("plot")) {
+            if (args.length == 1) out.addAll(List.of("claim", "enter", "home", "outline", "visit", "visits", "info", "abandon"));
+            else if (args.length == 2 && List.of("claim", "enter", "info", "abandon").contains(sub)) {
+                try { for (Plot plot : getPlots()) out.add(plot.id()); } catch (SQLException ignored) { }
+            } else if (args.length == 2 && sub.equals("visits")) out.addAll(List.of("on", "off"));
+            else if (args.length == 2 && sub.equals("outline")) out.add("off");
+            else if (args.length == 3 && sub.equals("abandon")) out.add("confirm");
+        } else if (name.equals("clcity") && sender.hasPermission("clashercity.admin")) {
+            if (args.length == 1) {
+                out.addAll(List.of("admin", "help", "phases", "create", "tp", "wand", "createplot", "createroad", "createpublic",
+                        "border", "roadbuild", "parkbuild", "setprice", "deleteplot", "setspawn", "setlocation", "removelocation",
+                        "mapitem", "mapwall", "undo", "planningcentre", "plotboard", "ceremony", "start", "phase", "end",
+                        "closevote", "judge", "score", "winner", "results", "reward", "info", "ghostcorners", "resetplotsroads"));
+            } else if (args.length == 2) {
+                switch (sub) {
+                    case "phase" -> out.addAll(Arrays.stream(Phase.values()).map(p -> p.name().toLowerCase(Locale.ROOT)).toList());
+                    case "border", "deleteplot", "setprice", "plotboard" -> {
+                        try { for (Plot plot : getPlots()) out.add(plot.id()); } catch (SQLException ignored) { }
+                    }
+                    case "roadbuild", "parkbuild" -> {
+                        try { for (Area area : getAreas()) out.add(area.id()); } catch (SQLException ignored) { }
+                    }
+                    case "mapwall" -> out.addAll(List.of("select", "preview", "create", "update", "remove"));
+                    case "ceremony" -> out.addAll(List.of("preview", "start"));
+                    case "ghostcorners" -> out.addAll(List.of("on", "off", "status"));
+                    case "judge" -> out.addAll(List.of("add", "remove"));
+                    case "score" -> { try { for (Plot plot : getTournamentPlots()) out.add(plot.id()); } catch (SQLException ignored) { } }
+                    case "winner" -> out.addAll(List.of("1", "2", "3"));
+                    case "reward" -> out.addAll(List.of("distribute", "retry"));
                 }
-            } else if(args.length==3&&List.of("border","roadbuild","parkbuild","plotboard").contains(args[0].toLowerCase(Locale.ROOT)))out.addAll(List.of("preview","create"));
-            else if(args.length==3&&List.of("deleteplot","undo","resetplotsroads").contains(args[0].toLowerCase(Locale.ROOT)))out.add("confirm");
-        }else if(n.equals("city")&&args.length==1)out.add("visit");
-        String prefix=args.length==0?"":args[args.length-1].toLowerCase(Locale.ROOT);
-        return out.stream().filter(v->v.toLowerCase(Locale.ROOT).startsWith(prefix)).distinct().toList();
+            } else if (args.length == 3) {
+                switch (sub) {
+                    case "border", "roadbuild", "parkbuild", "plotboard" -> out.addAll(List.of("preview", "create"));
+                    case "deleteplot", "undo", "resetplotsroads" -> out.add("confirm");
+                    case "judge", "reward" -> Bukkit.getOnlinePlayers().forEach(player -> out.add(player.getName()));
+                    case "score" -> out.addAll(scoreCategories().keySet());
+                    case "winner" -> {
+                        out.add("auto");
+                        try { for (Plot plot : getTournamentPlots()) if (plot.ownerUuid() != null) out.add(plot.id()); } catch (SQLException ignored) { }
+                    }
+                }
+            } else if (args.length == 4 && sub.equals("score")) {
+                Integer max = scoreCategories().get(args[2].toLowerCase(Locale.ROOT));
+                if (max != null) for (int mark = 0; mark <= max; mark++) out.add(Integer.toString(mark));
+            }
+        } else if (name.equals("city") && args.length == 1) {
+            out.add("visit");
+        }
+
+        String prefix = args.length == 0 ? "" : args[args.length - 1].toLowerCase(Locale.ROOT);
+        return out.stream().filter(value -> value.toLowerCase(Locale.ROOT).startsWith(prefix)).distinct().toList();
     }
 
     // ------------------------------- Events -------------------------------
