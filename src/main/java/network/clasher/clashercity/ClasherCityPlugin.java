@@ -2378,9 +2378,18 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         Map<String, Integer> map = new LinkedHashMap<>();
         var section = getConfig().getConfigurationSection("judging.categories");
         if (section != null) {
-            for (String key : section.getKeys(false)) map.put(key.toLowerCase(Locale.ROOT), section.getInt(key));
+            for (String key : section.getKeys(false)) {
+                int maximum = section.getInt(key);
+                if (key == null || key.isBlank() || maximum <= 0 || maximum > 1000) {
+                    getLogger().warning("Ignoring invalid judging category '" + key
+                            + "'; category maximum must be between 1 and 1000.");
+                    continue;
+                }
+                map.put(key.toLowerCase(Locale.ROOT), maximum);
+            }
         }
         if (map.isEmpty()) {
+            getLogger().warning("No valid judging categories configured; using built-in defaults.");
             map.put("creativity", 25); map.put("exterior", 25); map.put("interior", 20); map.put("detailing", 15); map.put("theme", 15);
         }
         return map;
