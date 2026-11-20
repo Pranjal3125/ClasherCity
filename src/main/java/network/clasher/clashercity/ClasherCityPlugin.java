@@ -2356,14 +2356,20 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         }
         double playerWeight = getConfig().getDouble("voting.player-weight", 50.0);
         double judgeWeight = getConfig().getDouble("voting.judge-weight", 50.0);
+        if (!Double.isFinite(playerWeight) || playerWeight < 0) playerWeight = 0;
+        if (!Double.isFinite(judgeWeight) || judgeWeight < 0) judgeWeight = 0;
         double weightTotal = playerWeight + judgeWeight;
         if (weightTotal <= 0) { playerWeight = 50; judgeWeight = 50; weightTotal = 100; }
+        int maximumJudgeScore = scoreCategories().values().stream().mapToInt(Integer::intValue).sum();
         List<ResultRow> result = new ArrayList<>();
         for (Plot plot : owned) {
             int votes = voteCounts.getOrDefault(plot.id(), 0);
             double playerScore = totalVotes == 0 ? 0 : (votes * 100.0 / totalVotes);
             List<Integer> totals = judgeTotals.getOrDefault(plot.id(), List.of());
-            double judgeScore = totals.isEmpty() ? 0 : totals.stream().mapToInt(Integer::intValue).average().orElse(0);
+            double judgeRawAverage = totals.isEmpty() ? 0 : totals.stream().mapToInt(Integer::intValue).average().orElse(0);
+            // Keep judge marks on the same 0-100 scale as player vote share, even when
+            // an administrator customizes category maxima away from a total of 100.
+            double judgeScore = maximumJudgeScore <= 0 ? 0 : judgeRawAverage * 100.0 / maximumJudgeScore;
             double finalScore = ((playerScore * playerWeight) + (judgeScore * judgeWeight)) / weightTotal;
             result.add(new ResultRow(plot.id(), plot.ownerUuid(), plot.ownerName(), votes, playerScore, judgeScore, finalScore));
         }
