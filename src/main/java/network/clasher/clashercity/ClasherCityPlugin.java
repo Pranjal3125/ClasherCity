@@ -2483,6 +2483,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         } else { sender.sendMessage("Only an online judge or admin player can submit scores."); return; }
         Plot plot = getPlot(args[1]);
         if (plot == null || plot.ownerUuid() == null || !isTournamentEntry(plot.id())) { sender.sendMessage(msg("Owned tournament entry not found.")); return; }
+        if (plot.ownerUuid().equals(judgeId.toString())) {
+            sender.sendMessage(msg("Judges cannot score their own tournament entry."));
+            return;
+        }
         String category = args[2].toLowerCase(Locale.ROOT);
         Integer max = scoreCategories().get(category);
         if (max == null) {
