@@ -12,5 +12,5 @@ if errorlevel 1 (
 )
 mvn -U clean package
 if errorlevel 1 exit /b 1
-echo Build complete: target\ClasherCity-1.0.0.jar
+echo Build complete: target\ClasherCity-1.1.2.jar
 endlocal
