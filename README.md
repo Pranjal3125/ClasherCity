@@ -2,7 +2,7 @@
 
 ClasherCity is a Paper plugin for a separate flat city world, paid building plots, WorldGuard protection, physical/GUI maps, tournament phases, public voting, judge scoring, leaderboard calculation and configurable console-command rewards.
 
-## Target environment
+## 1.1.2 maintenance updates\n\n- Admin command tab completion now suggests judge actions, tournament plot IDs, scoring categories and valid mark ranges, winner ranks/plots, and reward actions/online players.\n- Generated Maven output is excluded from source control; download build artifacts from GitHub Actions instead of committing `target/`.\n\n## Target environment
 
 - Paper `26.2-10-dev` / API `26.2`
 - Java **25** for building and running on Paper 26.x
@@ -34,7 +34,7 @@ Windows users can run `build.bat`; Linux/macOS users can run `./build.sh` after 
 
 1. Stop the test server and back up the test server folder.
 2. Confirm that WorldGuard, Vault, an economy provider and FastAsyncWorldEdit are installed.
-3. Copy `target/ClasherCity-1.1.0.jar` into the test server's `plugins/` folder.
+3. Copy `target/ClasherCity-1.1.2.jar` into the test server's `plugins/` folder.
 4. Start the server. ClasherCity asks Multiverse-Core to create/load/import the `clasher_city` flat world and creates `plugins/ClasherCity/config.yml` and `clashercity.db`.
 5. Check console for `ClasherCity enabled` and run `/clcity info`.
 6. Do **not** install this on the live Clasher Network server until all tests below pass.
