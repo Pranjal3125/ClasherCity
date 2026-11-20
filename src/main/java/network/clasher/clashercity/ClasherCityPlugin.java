@@ -2083,26 +2083,40 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
 
     private void openPlotMenu(Player player, int page) {
         List<Plot> plots;
-        try { plots = getPlots(); } catch (SQLException ex) { player.sendMessage(msg("Could not load plots.")); return; }
+        Set<String> cleanupPending = new HashSet<>();
+        try {
+            plots = getPlots();
+            try (PreparedStatement ps = db.prepareStatement("SELECT id FROM plots WHERE cleanup_pending=1");
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) cleanupPending.add(rs.getString("id").toLowerCase(Locale.ROOT));
+            }
+        } catch (SQLException ex) {
+            getLogger().warning("Could not load marketplace availability: " + ex.getMessage());
+            player.sendMessage(msg("Could not load plots. Please try again later."));
+            return;
+        }
         int perPage = 28;
         int maxPage = Math.max(0, (plots.size() - 1) / perPage);
         page = Math.max(0, Math.min(page, maxPage));
         MenuHolder holder = new MenuHolder("PLOTS", page);
         Inventory inv = holder.create(54, color("&8✦  CITY MARKETPLACE  &8•  &7" + (page + 1) + "/" + (maxPage + 1)));
         frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
-        inv.setItem(4, menuItem(Material.EMERALD, "&a&lPROPERTY MARKETPLACE", List.of("&8CLASHERCITY REAL ESTATE", "", "&7Registered properties: &f" + plots.size(), "&7Available: &a" + plots.stream().filter(p -> p.ownerUuid() == null).count(), "&7Purchased: &c" + plots.stream().filter(p -> p.ownerUuid() != null).count(), "", "&8Select a property to inspect details."), "none", null));
+        long available = plots.stream().filter(p -> p.ownerUuid() == null && !cleanupPending.contains(p.id().toLowerCase(Locale.ROOT))).count();
+        long locked = cleanupPending.size();
+        inv.setItem(4, menuItem(Material.EMERALD, "&a&lPROPERTY MARKETPLACE", List.of("&8CLASHERCITY REAL ESTATE", "", "&7Registered properties: &f" + plots.size(), "&7Available: &a" + available, "&7Cleanup locked: &6" + locked, "&7Purchased: &c" + plots.stream().filter(p -> p.ownerUuid() != null).count(), "", "&8Select a property to inspect details."), "none", null));
         int[] slots = {10,11,12,13,14,15,16,19,20,21,22,23,24,25,28,29,30,31,32,33,34,37,38,39,40,41,42,43};
         int start = page * perPage;
         for (int i = 0; i < slots.length && start + i < plots.size(); i++) {
             Plot p = plots.get(start + i);
             boolean sold = p.ownerUuid() != null;
-            inv.setItem(slots[i], menuItem(sold ? Material.RED_STAINED_GLASS_PANE : Material.LIME_STAINED_GLASS_PANE,
-                    (sold ? "&c&l" : "&a&l") + p.id(),
+            boolean locked = cleanupPending.contains(p.id().toLowerCase(Locale.ROOT));
+            Material icon = sold ? Material.RED_STAINED_GLASS_PANE : locked ? Material.ORANGE_STAINED_GLASS_PANE : Material.LIME_STAINED_GLASS_PANE;
+            String status = sold ? "&cPurchased" : locked ? "&6Cleanup pending — unavailable" : "&aAvailable";
+            inv.setItem(slots[i], menuItem(icon, (sold ? "&c&l" : locked ? "&6&l" : "&a&l") + p.id(),
                     List.of("&8PROPERTY LISTING", "", "&7Dimensions: &f" + (p.maxX()-p.minX()+1) + " x " + (p.maxZ()-p.minZ()+1),
-                            "&7Price: &e" + economy.format(p.price()),
-                            sold ? "&7Status: &cPurchased" : "&7Status: &aAvailable",
+                            "&7Price: &e" + economy.format(p.price()), "&7Status: " + status,
                             sold ? "&7Owner: &f" + p.ownerName() : "&7Owner: &fUnclaimed", "",
-                            sold ? "&e➜ View property details" : "&a➜ View / purchase options"), "plot_info", p.id()));
+                            sold ? "&e➜ View property details" : locked ? "&c➜ Staff cleanup is required" : "&a➜ View / purchase options"), "plot_info", p.id()));
         }
         if (page > 0) inv.setItem(48, menuItem(Material.ARROW, "&fPrevious page", List.of("&7Page " + page), "prev", null));
         inv.setItem(49, menuItem(Material.FILLED_MAP, "&bCity atlas", List.of("&7Browse the city overview."), "map", null));
@@ -2119,16 +2133,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             Inventory inv = holder.create(36, color("&8✦  PROPERTY PROFILE  &8•  &f" + p.id()));
             frameMenu(inv, Material.BLACK_STAINED_GLASS_PANE);
             boolean sold = p.ownerUuid() != null;
+            boolean locked = isPlotCleanupPending(p.id());
             int sizeX = p.maxX() - p.minX() + 1;
             int sizeZ = p.maxZ() - p.minZ() + 1;
-            inv.setItem(4, menuItem(sold ? Material.RED_CONCRETE : Material.LIME_CONCRETE,
-                    (sold ? "&c&l" : "&a&l") + "PLOT " + p.id(),
+            inv.setItem(4, menuItem(sold ? Material.RED_CONCRETE : locked ? Material.ORANGE_CONCRETE : Material.LIME_CONCRETE,
+                    (sold ? "&c&l" : locked ? "&6&l" : "&a&l") + "PLOT " + p.id(),
                     List.of("&8CLASHERCITY PROPERTY RECORD", "",
-                            "&7Availability: " + (sold ? "&cPurchased" : "&aAvailable"),
+                            "&7Availability: " + (sold ? "&cPurchased" : locked ? "&6Cleanup pending" : "&aAvailable"),
                             "&7Owner: &f" + (sold ? p.ownerName() : "Unclaimed"),
                             "&7Market price: &e" + economy.format(p.price()),
                             "&7Building phase: &f" + phase(),
-                            "", sold ? "&cThis property is not available for purchase." : "&aThis property is available."),
+                            "", sold ? "&cThis property is not available for purchase." : locked ? "&cStaff cleanup is required before resale." : "&aThis property is available."),
                     "info", p.id()));
             inv.setItem(11, menuItem(Material.MAP, "&b&lPROPERTY DIMENSIONS",
                     List.of("&8LAND INFORMATION", "",
