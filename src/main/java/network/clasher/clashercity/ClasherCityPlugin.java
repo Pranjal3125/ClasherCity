@@ -2888,12 +2888,24 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             } else if (args.length == 2) {
                 switch (sub) {
                     case "claim" -> {
-                        try { for (Plot plot : getPlots()) if (plot.ownerUuid() == null) out.add(plot.id()); }
-                        catch (SQLException ignored) { }
+                        try {
+                            for (Plot plot : getPlots()) {
+                                if (plot.ownerUuid() == null && !isPlotCleanupPending(plot.id())) out.add(plot.id());
+                            }
+                        } catch (SQLException ignored) { }
                     }
-                    case "enter", "info", "abandon" -> {
+                    case "enter", "info" -> {
                         try { for (Plot plot : getPlots()) out.add(plot.id()); }
                         catch (SQLException ignored) { }
+                    }
+                    case "abandon" -> {
+                        if (sender instanceof Player player) {
+                            try {
+                                for (Plot plot : getPlots()) {
+                                    if (player.getUniqueId().toString().equals(plot.ownerUuid())) out.add(plot.id());
+                                }
+                            } catch (SQLException ignored) { }
+                        }
                     }
                     case "home" -> {
                         if (sender instanceof Player player) {
