@@ -185,6 +185,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_operations (id TEXT PRIMARY KEY, player_uuid TEXT NOT NULL, player_name TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS worldgen_changes (operation_id TEXT NOT NULL, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL, old_data TEXT NOT NULL, new_data TEXT NOT NULL, restored INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(operation_id,world,x,y,z))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_boards (plot_id TEXT PRIMARY KEY, world TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL)");
+            // Keep common marketplace, tournament, voting and reward lookups efficient as data grows.
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_plots_owner_uuid ON plots(owner_uuid)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_plots_world_bounds ON plots(world,min_x,max_x,min_z,max_z)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_tournament_entries_owner ON tournament_entries(tournament_id,owner_uuid)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_votes_tournament_plot ON votes(tournament_id,plot_id)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_scores_tournament_plot ON scores(tournament_id,plot_id)");
+            st.executeUpdate("CREATE INDEX IF NOT EXISTS idx_reward_queue_player_status ON reward_queue(player_uuid,status,created_at)");
         }
     }
 
