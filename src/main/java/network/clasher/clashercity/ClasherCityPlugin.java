@@ -1335,64 +1335,126 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
 
     private void purchasePlot(Player player, String id) {
         if (phase() != Phase.REGISTRATION) { player.sendMessage(msg("Plot purchases are closed.")); return; }
+
+        Plot plot = null;
+        RegionManager manager = null;
+        ProtectedRegion region = null;
+        boolean paymentTaken = false;
+        boolean regionChanged = false;
+        boolean committed = false;
+
         try {
             db.setAutoCommit(false);
-            Plot plot = getPlot(id);
-            if (plot == null) { db.rollback(); player.sendMessage(msg("Plot not found.")); return; }
-            if (plot.ownerUuid() != null) { db.rollback(); player.sendMessage(msg("That plot is already sold.")); return; }
+            plot = getPlot(id);
+            if (plot == null) { player.sendMessage(msg("Plot not found.")); return; }
+            if (plot.ownerUuid() != null) { player.sendMessage(msg("That plot is already sold.")); return; }
+
             int maxPlots = getConfig().getInt("plots.max-per-player", 2);
             if (!getConfig().getBoolean("plots.allow-multiple", true)) maxPlots = 1;
             try (PreparedStatement ps = db.prepareStatement("SELECT COUNT(*) FROM plots WHERE owner_uuid=?")) {
                 ps.setString(1, player.getUniqueId().toString());
-                try (ResultSet rs = ps.executeQuery()) { if (rs.next() && rs.getInt(1) >= maxPlots) { db.rollback(); player.sendMessage(msg("You have reached your plot limit of " + maxPlots + ".")); return; } }
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) >= maxPlots) {
+                        player.sendMessage(msg("You have reached your plot limit of " + maxPlots + "."));
+                        return;
+                    }
+                }
             }
-            RegionManager manager = regionManager(cityWorld);
-            ProtectedRegion region = manager == null ? null : manager.getRegion(plotRegionId(plot.id()));
-            if (region == null) { db.rollback(); player.sendMessage(msg("Plot protection is missing. Contact an admin.")); return; }
-            if (!economy.has(player, plot.price())) { db.rollback(); player.sendMessage(msg("Insufficient balance. Required: " + economy.format(plot.price()))); return; }
-            var response = economy.withdrawPlayer(player, plot.price());
-            if (!response.transactionSuccess()) { db.rollback(); player.sendMessage(msg("Payment failed: " + response.errorMessage)); return; }
-            boolean regionChanged = false;
-            try {
-                region.getOwners().addPlayer(player.getUniqueId());
-                regionChanged = true;
-                try (PreparedStatement update = db.prepareStatement("UPDATE plots SET owner_uuid=?,owner_name=? WHERE id=? AND owner_uuid IS NULL")) {
-                    update.setString(1, player.getUniqueId().toString()); update.setString(2, player.getName()); update.setString(3, plot.id());
-                    if (update.executeUpdate() != 1) throw new SQLException("Plot ownership changed during purchase.");
+
+            manager = regionManager(cityWorld);
+            region = manager == null ? null : manager.getRegion(plotRegionId(plot.id()));
+            if (region == null) {
+                player.sendMessage(msg("Plot protection is missing. Contact an admin."));
+                return;
+            }
+            if (!economy.has(player, plot.price())) {
+                player.sendMessage(msg("Insufficient balance. Required: " + economy.format(plot.price())));
+                return;
+            }
+
+            var payment = economy.withdrawPlayer(player, plot.price());
+            if (!payment.transactionSuccess()) {
+                player.sendMessage(msg("Payment failed: " + payment.errorMessage));
+                return;
+            }
+            paymentTaken = true;
+
+            region.getOwners().addPlayer(player.getUniqueId());
+            regionChanged = true;
+
+            try (PreparedStatement update = db.prepareStatement(
+                    "UPDATE plots SET owner_uuid=?,owner_name=? WHERE id=? AND owner_uuid IS NULL")) {
+                update.setString(1, player.getUniqueId().toString());
+                update.setString(2, player.getName());
+                update.setString(3, plot.id());
+                if (update.executeUpdate() != 1) throw new SQLException("Plot ownership changed during purchase.");
+            }
+            try (PreparedStatement tx = db.prepareStatement(
+                    "INSERT INTO transactions(plot_id,player_uuid,player_name,amount,kind) VALUES(?,?,?,?,?)")) {
+                tx.setString(1, plot.id());
+                tx.setString(2, player.getUniqueId().toString());
+                tx.setString(3, player.getName());
+                tx.setDouble(4, plot.price());
+                tx.setString(5, "PURCHASE");
+                tx.executeUpdate();
+            }
+            try (PreparedStatement entry = db.prepareStatement(
+                    "INSERT INTO tournament_entries(tournament_id,plot_id,owner_uuid,owner_name) VALUES(?,?,?,?)")) {
+                entry.setString(1, tournamentId());
+                entry.setString(2, plot.id());
+                entry.setString(3, player.getUniqueId().toString());
+                entry.setString(4, player.getName());
+                entry.executeUpdate();
+            }
+
+            manager.saveChanges();
+            db.commit();
+            committed = true;
+        } catch (Exception ex) {
+            try { db.rollback(); } catch (SQLException rollbackError) {
+                getLogger().severe("Could not roll back plot purchase for " + player.getName() + ": " + rollbackError.getMessage());
+            }
+
+            if (regionChanged && region != null) {
+                region.getOwners().removePlayer(player.getUniqueId());
+                try {
+                    if (manager != null) manager.saveChanges();
+                } catch (Exception regionError) {
+                    getLogger().severe("Could not restore WorldGuard ownership after failed purchase of "
+                            + (plot == null ? id : plot.id()) + ": " + regionError.getMessage());
                 }
-                try (PreparedStatement tx = db.prepareStatement("INSERT INTO transactions(plot_id,player_uuid,player_name,amount,kind) VALUES(?,?,?,?,?)")) {
-                    tx.setString(1, plot.id()); tx.setString(2, player.getUniqueId().toString()); tx.setString(3, player.getName()); tx.setDouble(4, plot.price()); tx.setString(5, "PURCHASE"); tx.executeUpdate();
-                }
-                try (PreparedStatement entry = db.prepareStatement("INSERT INTO tournament_entries(tournament_id,plot_id,owner_uuid,owner_name) VALUES(?,?,?,?)")) {
-                    entry.setString(1, tournamentId()); entry.setString(2, plot.id()); entry.setString(3, player.getUniqueId().toString()); entry.setString(4, player.getName()); entry.executeUpdate();
-                }
-                manager.saveChanges();
-                db.commit();
-                mapRenderer.invalidate();
-                refreshPlotBoard(plot.id());
-                player.sendMessage(msg("You purchased plot &e" + plot.id() + "&a for &e" + economy.format(plot.price()) + "&a."));
-                player.sendMessage(msg("Use &e/plot home " + plot.id() + "&a to visit your plot."));
-            } catch (Exception ex) {
-                db.rollback();
-                if (regionChanged) {
-                    region.getOwners().removePlayer(player.getUniqueId());
-                    try { manager.saveChanges(); } catch (Exception ignored) { }
-                }
+            }
+
+            if (paymentTaken && plot != null) {
                 var refund = economy.depositPlayer(player, plot.price());
                 if (refund.transactionSuccess()) {
                     player.sendMessage(msg("Purchase failed. Your payment was refunded."));
                 } else {
                     player.sendMessage(msg("Purchase failed and the automatic refund also failed. Contact an administrator immediately."));
-                    getLogger().severe("CRITICAL: refund failed for " + player.getName() + " after plot " + plot.id() + " purchase rollback: " + refund.errorMessage);
+                    getLogger().severe("CRITICAL: refund failed for " + player.getName() + " after plot "
+                            + plot.id() + " purchase rollback: " + refund.errorMessage);
                 }
-                getLogger().warning("Plot purchase rolled back: " + ex.getMessage());
+            } else {
+                player.sendMessage(msg("Purchase failed. No payment was taken."));
             }
-        } catch (Exception ex) {
-            try { db.rollback(); } catch (SQLException ignored) {}
-            player.sendMessage(msg("Database error while purchasing plot."));
-            getLogger().warning("Purchase error: " + ex.getMessage());
+            getLogger().warning("Plot purchase rolled back for " + player.getName() + " (" + id + "): " + ex.getMessage());
         } finally {
-            try { db.setAutoCommit(true); } catch (SQLException ignored) {}
+            try { db.setAutoCommit(true); } catch (SQLException ex) {
+                getLogger().severe("Could not restore SQLite auto-commit after plot purchase: " + ex.getMessage());
+            }
+        }
+
+        // Never refund or undo ownership after the database commit has succeeded.
+        // UI/map refresh failures must not turn a completed sale into a refunded sale.
+        if (committed && plot != null) {
+            try {
+                mapRenderer.invalidate();
+                refreshPlotBoard(plot.id());
+            } catch (Exception ex) {
+                getLogger().warning("Plot " + plot.id() + " was purchased, but its map/board refresh failed: " + ex.getMessage());
+            }
+            player.sendMessage(msg("You purchased plot &e" + plot.id() + "&a for &e" + economy.format(plot.price()) + "&a."));
+            player.sendMessage(msg("Use &e/plot home " + plot.id() + "&a to visit your plot."));
         }
     }
 
