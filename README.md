@@ -1,4 +1,4 @@
-# ClasherCity 1.1.0 — Clasher Network
+# ClasherCity 1.1.1 — Clasher Network
 
 ClasherCity is a Paper plugin for a separate flat city world, paid building plots, WorldGuard protection, physical/GUI maps, tournament phases, public voting, judge scoring, leaderboard calculation and configurable console-command rewards.
 
@@ -24,7 +24,7 @@ mvn -U clean package
 
 The shaded plugin JAR will be:
 
-`target/ClasherCity-1.1.0.jar`
+`target/ClasherCity-1.1.1.jar`
 
 The SQLite JDBC driver is shaded into this JAR. Paper, WorldGuard, FAWE and Vault APIs are provided by the server and are not bundled.
 
@@ -41,7 +41,7 @@ Windows users can run `build.bat`; Linux/macOS users can run `./build.sh` after 
 
 ## Admin setup
 
-The city world is named `clasher_city` by default and is managed through Multiverse-Core. Keep `city.multiverse.enabled: true` in `plugins/ClasherCity/config.yml`. If the world folder already exists but is not registered in Multiverse, ClasherCity imports it as a NORMAL environment world; if it does not exist, ClasherCity runs the equivalent of `/mv create clasher_city normal --world-type flat --no-structures`. If it is already registered but unloaded, ClasherCity loads it. Existing world data is never regenerated or overwritten. Install Multiverse-Core before ClasherCity. Set `city.multiverse.enabled: false` only if you intentionally want Bukkit's native world creation instead.
+The city world is named `clasher_city` by default and is managed through Multiverse-Core. Keep Multiverse-Core is a required dependency and manages city-world creation/import/loading. If the `clasher_city` folder already exists but is not registered in Multiverse, ClasherCity imports it as a NORMAL environment world; if it does not exist, ClasherCity runs the equivalent of `/mv create clasher_city normal --world-type flat --no-structures`. If it is already registered but unloaded, ClasherCity loads it. Existing world data is never regenerated or overwritten. Install Multiverse-Core before ClasherCity; there is no Bukkit-native fallback setting.
 
 1. Go to the city world (or run `/clcity create` to make sure it is loaded).
 2. Run `/clcity setspawn` while standing at your intended city spawn.
