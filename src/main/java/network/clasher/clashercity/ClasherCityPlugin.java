@@ -2206,8 +2206,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         int minimumMinutes = getConfig().getInt("voting.minimum-playtime-minutes", 0);
         if (minimumMinutes <= 0) return true;
         int ticks;
-        try { ticks = player.getStatistic(Statistic.PLAY_ONE_MINUTE); }
-        catch (Exception ex) { return true; }
+        try {
+            ticks = player.getStatistic(Statistic.PLAY_ONE_MINUTE);
+        } catch (Exception ex) {
+            getLogger().warning("Could not verify playtime eligibility for " + player.getName()
+                    + "; vote denied to avoid bypassing the configured minimum: " + ex.getMessage());
+            return false;
+        }
         return ticks / 1200 >= minimumMinutes;
     }
 
