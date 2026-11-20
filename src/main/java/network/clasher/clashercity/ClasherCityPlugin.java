@@ -1147,17 +1147,18 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             check.setString(1,id);
             try(ResultSet rs=check.executeQuery()){
                 if(!rs.next()){ sender.sendMessage(msg("Unknown worldgen operation ID.")); return; }
-                if(!rs.getString("status").equals("ACTIVE")){ sender.sendMessage(msg("This operation has already been undone or closed.")); return; }
+                String status = rs.getString("status");
+                if(!status.equals("ACTIVE") && !status.equals("PARTIAL")){ sender.sendMessage(msg("This operation has already been undone or closed.")); return; }
                 operationKind=rs.getString("kind");
             }
         }
-        int restored=0,skipped=0;
+        int restored=0,skipped=0,unloaded=0;
         try(PreparedStatement ps=db.prepareStatement("SELECT rowid,world,x,y,z,old_data,new_data FROM worldgen_changes WHERE operation_id=? AND restored=0")){
             ps.setString(1,id);
             try(ResultSet rs=ps.executeQuery()){
                 while(rs.next()){
                     World w=Bukkit.getWorld(rs.getString("world"));
-                    if(w==null){ skipped++; continue; }
+                    if(w==null){ skipped++; unloaded++; continue; }
                     org.bukkit.block.Block block=w.getBlockAt(rs.getInt("x"),rs.getInt("y"),rs.getInt("z"));
                     if(!block.getBlockData().getAsString().equals(rs.getString("new_data"))){ skipped++; continue; }
                     block.setBlockData(Bukkit.createBlockData(rs.getString("old_data")),false);
@@ -1166,13 +1167,22 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 }
             }
         }
-        try(PreparedStatement ps=db.prepareStatement("UPDATE worldgen_operations SET status='UNDONE' WHERE id=?")){ ps.setString(1,id); ps.executeUpdate(); }
-        if(operationKind.equals("PLANNING_CENTRE")){
+        String finalStatus = unloaded > 0 ? "PARTIAL" : "UNDONE";
+        try(PreparedStatement ps=db.prepareStatement("UPDATE worldgen_operations SET status=? WHERE id=?")){
+            ps.setString(1,finalStatus); ps.setString(2,id); ps.executeUpdate();
+        }
+        if(unloaded == 0 && operationKind.equals("PLANNING_CENTRE")){
             World w=Bukkit.getWorld(getConfig().getString("map-wall.world",""));
             if(w!=null) for(org.bukkit.entity.Entity entity:w.getEntities()) if(entity instanceof org.bukkit.entity.ItemFrame && entity.getScoreboardTags().contains("clashercity_mapwall")) entity.remove();
             getConfig().set("map-wall.world",null); saveConfig();
         }
-        sender.sendMessage(msg("Undo complete for &e"+id+"&a: restored &f"+restored+"&a blocks; &c"+skipped+"&a skipped because they changed or their world is unloaded."));
+        if(unloaded > 0) {
+            sender.sendMessage(msg("Undo partially completed for &e"+id+"&a: restored &f"+restored+"&a blocks; &e"+unloaded
+                    +"&a blocks belong to unloaded worlds. Load those worlds and run the same undo command again. The operation remains recoverable."));
+        } else {
+            sender.sendMessage(msg("Undo complete for &e"+id+"&a: restored &f"+restored+"&a blocks; &c"+skipped
+                    +"&a skipped because they were changed after generation."));
+        }
     }
 
     private void validateId(String id) {
