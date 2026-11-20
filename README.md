@@ -136,7 +136,7 @@ If commands were blank when the results were finalized, set them in config and r
 
 - One tournament is active at a time; tournament phase/votes/judging are persistent in SQLite.
 - Plot ownership is persistent and remains assigned between tournaments until the owner abandons it or an admin removes an unowned plot. Tournament entries are tracked separately: buying a plot during registration enters it automatically; an already-owned plot must use `/plot enter <id>` for each new tournament.
-- Plot transfer/resale, automatic refunds on admin deletion, historical tournament browsing, and multi-city support are not included in 1.0.0.
+- Plot transfer/resale, automatic refunds on admin deletion, historical tournament browsing, and multi-city support are not included in version 1.1.2.
 - An owned plot can only be abandoned during SETUP or REGISTRATION. During REGISTRATION, its current tournament entry is removed; after a completed tournament, the stored result entry is retained.
 - Physical map is a custom schematic map; the GUI map shows plot statuses. It is not a full live 3D minimap.
 - Voting uses Minecraft account UUID. It prevents duplicate votes per account, but cannot guarantee detection of alternate accounts.
