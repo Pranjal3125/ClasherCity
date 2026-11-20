@@ -2361,7 +2361,10 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         if (!isEligibleVoter(player)) { player.sendMessage(msg("You do not meet the minimum playtime requirement.")); return; }
         try {
             Plot plot = getPlot(plotId);
-            if (plot == null || plot.ownerUuid() == null) { player.sendMessage(msg("This entry is unavailable.")); return; }
+            if (plot == null || plot.ownerUuid() == null || !isTournamentEntry(plot.id())) {
+                player.sendMessage(msg("This plot is not an active entry in the current tournament."));
+                return;
+            }
             if (plot.ownerUuid().equals(player.getUniqueId().toString())) { player.sendMessage(msg("You cannot vote for your own plot.")); return; }
             try (PreparedStatement ps = db.prepareStatement("INSERT INTO votes(tournament_id,voter_uuid,voter_name,plot_id) VALUES(?,?,?,?)")) {
                 ps.setString(1, tournamentId()); ps.setString(2, player.getUniqueId().toString()); ps.setString(3, player.getName()); ps.setString(4, plotId); ps.executeUpdate();
