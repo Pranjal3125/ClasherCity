@@ -2431,6 +2431,17 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                         getLogger().warning("Reward commands are empty for rank " + rank + "; marked REVIEW for " + player.getName());
                         continue;
                     }
+                    // Claim the queue row before executing external console commands. If the
+                    // server crashes after dispatch but before DELIVERED is saved, PROCESSING
+                    // prevents an automatic duplicate; staff can inspect and explicitly retry it.
+                    try (PreparedStatement claim = db.prepareStatement(
+                            "UPDATE reward_queue SET status='PROCESSING' WHERE tournament_id=? AND player_uuid=? AND rank=? AND status='PENDING'")) {
+                        claim.setString(1, rewardTournament);
+                        claim.setString(2, player.getUniqueId().toString());
+                        claim.setInt(3, rank);
+                        if (claim.executeUpdate() != 1) continue;
+                    }
+
                     boolean dispatched = true;
                     for (String raw : commands) {
                         String command = raw.replace("{player}", player.getName()).replace("{uuid}", player.getUniqueId().toString())
@@ -2467,9 +2478,9 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             sender.sendMessage(msg("Configured rewards have been queued/dispatched for the current leaderboard."));
         } else if (args.length >= 3 && args[1].equalsIgnoreCase("retry")) {
             OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
-            try (PreparedStatement ps = db.prepareStatement("UPDATE reward_queue SET status='PENDING' WHERE player_uuid=? AND status IN ('PENDING','REVIEW')")) {
+            try (PreparedStatement ps = db.prepareStatement("UPDATE reward_queue SET status='PENDING' WHERE player_uuid=? AND status IN ('PENDING','REVIEW','PROCESSING')")) {
                 ps.setString(1, target.getUniqueId().toString());
-                int count = ps.executeUpdate(); sender.sendMessage(msg("Pending/review reward records reset: " + count + ". Verify no reward was already granted before retrying."));
+                int count = ps.executeUpdate(); sender.sendMessage(msg("Pending/review/processing reward records reset: " + count + ". Verify no reward was already granted before retrying."));
                 Player online = Bukkit.getPlayer(target.getUniqueId());
                 if (online != null && count > 0) deliverPendingRewards(online);
             }
