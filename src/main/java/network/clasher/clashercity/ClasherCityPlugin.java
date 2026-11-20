@@ -651,10 +651,12 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 case "phases" -> { if(sender instanceof Player p) openPhaseControlMenu(p); else sender.sendMessage("Use /clcity phases in-game."); }
                 case "phase" -> {
                     if (args.length < 2) { sender.sendMessage("Usage: /clcity phase <setup|registration|building|voting|results>"); break; }
-                    announcePhaseChange(Phase.valueOf(args[1].toUpperCase(Locale.ROOT)));
+                    Phase requestedPhase = Phase.valueOf(args[1].toUpperCase(Locale.ROOT));
+                    if (requestedPhase == Phase.RESULTS) closeTournament(sender);
+                    else announcePhaseChange(requestedPhase);
                 }
                 case "end" -> closeTournament(sender);
-                case "voting" -> { setPhase(Phase.VOTING); broadcast(msg("Voting is now open. Use &e/buildvote&a.")); }
+                case "voting" -> announcePhaseChange(Phase.VOTING);
                 case "closevote" -> closeTournament(sender);
                 case "judge" -> judgeCommand(sender, args);
                 case "score" -> scoreCommand(sender, args);
