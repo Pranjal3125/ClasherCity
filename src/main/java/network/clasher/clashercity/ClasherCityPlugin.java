@@ -1127,6 +1127,8 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
 
     private void persistWorldgenOperation(String id,Player player,String kind,List<String[]> changes) {
         if(changes.isEmpty()) return;
+        boolean committed = false;
+        Exception failure = null;
         try {
             db.setAutoCommit(false);
             try(PreparedStatement op=db.prepareStatement("INSERT INTO worldgen_operations(id,player_uuid,player_name,kind) VALUES(?,?,?,?)");
@@ -1135,10 +1137,44 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                 for(String[] c:changes){
                     ps.setString(1,id); ps.setString(2,c[0]); ps.setInt(3,Integer.parseInt(c[1])); ps.setInt(4,Integer.parseInt(c[2])); ps.setInt(5,Integer.parseInt(c[3])); ps.setString(6,c[4]); ps.setString(7,c[5]); ps.addBatch();
                 }
-                ps.executeBatch(); db.commit();
-            } catch(Exception ex){ db.rollback(); throw ex; }
-            finally { db.setAutoCommit(true); }
-        } catch(Exception ex){ getLogger().severe("Could not save worldgen undo data for "+id+": "+ex.getMessage()); player.sendMessage(msg("WARNING: build completed but undo snapshot could not be saved. Contact an admin; operation "+id)); }
+                ps.executeBatch();
+                db.commit();
+                committed = true;
+            } catch(Exception ex) {
+                try { db.rollback(); } catch(SQLException rollbackEx) { ex.addSuppressed(rollbackEx); }
+                throw ex;
+            }
+        } catch(Exception ex) {
+            failure = ex;
+        } finally {
+            try { db.setAutoCommit(true); }
+            catch(SQLException ex) {
+                if(failure == null) failure = ex;
+                else failure.addSuppressed(ex);
+            }
+        }
+        if(failure == null) return;
+        getLogger().severe("Could not save worldgen undo data for "+id+": "+failure.getMessage());
+        if(!committed) {
+            int restored = 0, skipped = 0;
+            for(int i=changes.size()-1;i>=0;i--) {
+                String[] change = changes.get(i);
+                World world = Bukkit.getWorld(change[0]);
+                if(world == null) { skipped++; continue; }
+                try {
+                    Block block = world.getBlockAt(Integer.parseInt(change[1]),Integer.parseInt(change[2]),Integer.parseInt(change[3]));
+                    if(!block.getBlockData().getAsString().equals(change[5])) { skipped++; continue; }
+                    block.setBlockData(Bukkit.createBlockData(change[4]),false);
+                    restored++;
+                } catch(Exception rollbackEx) {
+                    skipped++;
+                    getLogger().warning("Could not roll back unsaved worldgen block in "+change[0]+" at "+change[1]+","+change[2]+","+change[3]+": "+rollbackEx.getMessage());
+                }
+            }
+            player.sendMessage(msg("Worldgen undo snapshot failed. Automatically rolled back &f"+restored+"&c generated blocks; &e"+skipped+"&c blocks need admin review. Operation "+id+"."));
+        } else {
+            player.sendMessage(msg("Worldgen undo snapshot was committed, but database connection cleanup failed. Operation "+id+" should remain undoable; check the server log."));
+        }
     }
 
     private void undoWorldgen(CommandSender sender,String id) throws SQLException {
