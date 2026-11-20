@@ -722,8 +722,21 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             getOrCreatePlotRegion(plot);
             manager.saveChanges();
         } catch (Exception ex) {
-            try (PreparedStatement ps = db.prepareStatement("DELETE FROM plots WHERE id=?")) { ps.setString(1, id); ps.executeUpdate(); }
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM plot_terrain WHERE plot_id=?")) {
+                ps.setString(1, id);
+                ps.executeUpdate();
+            } catch (SQLException cleanupEx) {
+                getLogger().severe("Could not remove terrain snapshot for failed plot " + id + ": " + cleanupEx.getMessage());
+            }
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM plots WHERE id=?")) {
+                ps.setString(1, id);
+                ps.executeUpdate();
+            } catch (SQLException cleanupEx) {
+                getLogger().severe("Could not remove database row for failed plot " + id + ": " + cleanupEx.getMessage());
+            }
             manager.removeRegion(plotRegionId(id));
+            try { manager.saveChanges(); }
+            catch (Exception rollbackEx) { getLogger().severe("Could not persist WorldGuard rollback for failed plot " + id + ": " + rollbackEx.getMessage()); }
             throw ex;
         }
         mapRenderer.invalidate();
