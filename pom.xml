@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>network.clasher</groupId>
   <artifactId>ClasherCity</artifactId>
-  <version>1.1.1</version>
+  <version>1.1.2</version>
   <name>ClasherCity</name>
   <description>City plots and building tournament system for Clasher Network</description>
   <properties>
