@@ -765,8 +765,16 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             getOrCreateAreaRegion(new Area(id, cityWorld.getName(), type, minX, minZ, maxX, maxZ));
             manager.saveChanges();
         } catch (Exception ex) {
-            try (PreparedStatement ps = db.prepareStatement("DELETE FROM areas WHERE id=? AND type=?")) { ps.setString(1, id); ps.setString(2, type); ps.executeUpdate(); }
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM areas WHERE id=? AND type=?")) {
+                ps.setString(1, id);
+                ps.setString(2, type);
+                ps.executeUpdate();
+            } catch (SQLException cleanupEx) {
+                getLogger().severe("Could not remove database row for failed area " + id + ": " + cleanupEx.getMessage());
+            }
             manager.removeRegion(regionId);
+            try { manager.saveChanges(); }
+            catch (Exception rollbackEx) { getLogger().severe("Could not persist WorldGuard rollback for failed area " + id + ": " + rollbackEx.getMessage()); }
             throw ex;
         }
         mapRenderer.invalidate();
