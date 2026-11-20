@@ -166,7 +166,12 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         try (Statement st = db.createStatement()) {
             st.execute("PRAGMA journal_mode=WAL");
             st.execute("PRAGMA foreign_keys=ON");
-            st.executeUpdate("CREATE TABLE IF NOT EXISTS plots (id TEXT PRIMARY KEY, world TEXT NOT NULL, min_x INTEGER NOT NULL, min_z INTEGER NOT NULL, max_x INTEGER NOT NULL, max_z INTEGER NOT NULL, price REAL NOT NULL, owner_uuid TEXT, owner_name TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS plots (id TEXT PRIMARY KEY, world TEXT NOT NULL, min_x INTEGER NOT NULL, min_z INTEGER NOT NULL, max_x INTEGER NOT NULL, max_z INTEGER NOT NULL, price REAL NOT NULL, owner_uuid TEXT, owner_name TEXT, cleanup_pending INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+            boolean hasCleanupPending = false;
+            try (ResultSet columns = st.executeQuery("PRAGMA table_info(plots)")) {
+                while (columns.next()) if ("cleanup_pending".equalsIgnoreCase(columns.getString("name"))) hasCleanupPending = true;
+            }
+            if (!hasCleanupPending) st.executeUpdate("ALTER TABLE plots ADD COLUMN cleanup_pending INTEGER NOT NULL DEFAULT 0");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS plot_terrain (plot_id TEXT NOT NULL, x INTEGER NOT NULL, z INTEGER NOT NULL, ground_y INTEGER NOT NULL, PRIMARY KEY(plot_id,x,z))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS tournament_entries (tournament_id TEXT NOT NULL, plot_id TEXT NOT NULL, owner_uuid TEXT NOT NULL, owner_name TEXT NOT NULL, entered_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tournament_id, plot_id))");
             st.executeUpdate("CREATE TABLE IF NOT EXISTS areas (id TEXT PRIMARY KEY, world TEXT NOT NULL, type TEXT NOT NULL, min_x INTEGER NOT NULL, min_z INTEGER NOT NULL, max_x INTEGER NOT NULL, max_z INTEGER NOT NULL)");
@@ -1235,6 +1240,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         mapRenderer.invalidate();
     }
 
+    private boolean isPlotCleanupPending(String plotId) throws SQLException {
+        try (PreparedStatement ps = db.prepareStatement("SELECT cleanup_pending FROM plots WHERE id=?")) {
+            ps.setString(1, plotId);
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() && rs.getInt(1) != 0; }
+        }
+    }
+
     private List<Plot> getPlots() throws SQLException {
         List<Plot> list = new ArrayList<>();
         try (PreparedStatement ps = db.prepareStatement("SELECT * FROM plots ORDER BY id"); ResultSet rs = ps.executeQuery()) {
@@ -1324,6 +1336,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         catch (SQLException ex) { player.sendMessage(msg("Database error.")); return; }
         if (plot == null) { player.sendMessage(msg("Plot not found.")); return; }
         if (plot.ownerUuid() != null) { player.sendMessage(msg("That plot is already owned by " + plot.ownerName() + ".")); return; }
+        if (isPlotCleanupPending(plot.id())) { player.sendMessage(msg("&cThis plot is temporarily unavailable while staff complete its terrain cleanup.")); return; }
         if (phase() != Phase.REGISTRATION) { player.sendMessage(msg("Plot purchases are only open during registration.")); return; }
         MenuHolder holder = new MenuHolder("CONFIRM", 0);
         Inventory inv = holder.create(27, color("&8Confirm plot purchase"));
@@ -1348,6 +1361,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             plot = getPlot(id);
             if (plot == null) { player.sendMessage(msg("Plot not found.")); return; }
             if (plot.ownerUuid() != null) { player.sendMessage(msg("That plot is already sold.")); return; }
+            if (isPlotCleanupPending(plot.id())) { player.sendMessage(msg("&cThis plot is temporarily unavailable while staff complete its terrain cleanup.")); return; }
 
             int maxPlots = getConfig().getInt("plots.max-per-player", 2);
             if (!getConfig().getBoolean("plots.allow-multiple", true)) maxPlots = 1;
@@ -1506,7 +1520,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             db.setAutoCommit(false);
             try {
                 try (PreparedStatement ps = db.prepareStatement(
-                        "UPDATE plots SET owner_uuid=NULL,owner_name=NULL WHERE id=? AND owner_uuid=?")) {
+                        "UPDATE plots SET owner_uuid=NULL,owner_name=NULL,cleanup_pending=1 WHERE id=? AND owner_uuid=?")) {
                     ps.setString(1, plot.id());
                     ps.setString(2, player.getUniqueId().toString());
                     if (ps.executeUpdate() != 1) throw new SQLException("Plot ownership changed during release.");
@@ -1577,6 +1591,15 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                         entity.remove();
                     }
                 }
+            }
+
+            if (!clearFailed) {
+                try (PreparedStatement ps = db.prepareStatement("UPDATE plots SET cleanup_pending=0 WHERE id=? AND owner_uuid IS NULL")) {
+                    ps.setString(1, plot.id());
+                    if (ps.executeUpdate() != 1) throw new SQLException("Could not finalize released plot cleanup state.");
+                }
+            } else {
+                player.sendMessage(msg("&cPlot released but cleanup is incomplete. It is locked against resale; contact staff."));
             }
 
             if (getConfig().getBoolean("plots.refund-on-abandon", false)) {
