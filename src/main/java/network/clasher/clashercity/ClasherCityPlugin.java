@@ -296,18 +296,41 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
     }
 
     private void restoreRegions() throws Exception {
+        RegionManager manager = regionManager(cityWorld);
+        if (manager == null) throw new IllegalStateException("WorldGuard RegionManager unavailable");
+
+        Set<String> expectedPlotRegions = new HashSet<>();
+        Set<String> expectedAreaRegions = new HashSet<>();
         for (Plot plot : getPlots()) {
             if (!plot.world().equals(cityWorld.getName())) continue;
+            String regionId = plotRegionId(plot.id());
+            expectedPlotRegions.add(regionId.toLowerCase(Locale.ROOT));
             ProtectedRegion region = getOrCreatePlotRegion(plot);
             region.getOwners().clear();
             if (plot.ownerUuid() != null) region.getOwners().addPlayer(UUID.fromString(plot.ownerUuid()));
         }
         for (Area area : getAreas()) {
             if (!area.world().equals(cityWorld.getName())) continue;
+            expectedAreaRegions.add(areaRegionId(area.type(), area.id()).toLowerCase(Locale.ROOT));
             getOrCreateAreaRegion(area);
         }
-        RegionManager manager = regionManager(cityWorld);
-        if (manager != null) manager.saveChanges();
+
+        // Remove only plugin-managed regions whose database records no longer exist.
+        // This prevents deleted plots/roads from leaving stale WorldGuard protections behind.
+        String plotPrefix = getConfig().getString("protection.plot-region-prefix", "plot_").toLowerCase(Locale.ROOT);
+        String roadPrefix = getConfig().getString("protection.road-region-prefix", "road_").toLowerCase(Locale.ROOT);
+        String publicPrefix = getConfig().getString("protection.public-region-prefix", "public_").toLowerCase(Locale.ROOT);
+        for (String regionId : new ArrayList<>(manager.getRegions().keySet())) {
+            String normalizedId = regionId.toLowerCase(Locale.ROOT);
+            boolean managedPlot = normalizedId.startsWith(plotPrefix);
+            boolean managedArea = normalizedId.startsWith(roadPrefix) || normalizedId.startsWith(publicPrefix);
+            if ((managedPlot && !expectedPlotRegions.contains(normalizedId))
+                    || (managedArea && !expectedAreaRegions.contains(normalizedId))) {
+                manager.removeRegion(regionId);
+                getLogger().info("Removed stale ClasherCity WorldGuard region: " + regionId);
+            }
+        }
+        manager.saveChanges();
     }
 
     private ProtectedRegion getOrCreatePlotRegion(Plot plot) {
