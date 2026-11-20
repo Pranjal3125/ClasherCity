@@ -548,6 +548,14 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
                     if (args.length < 3 || !args[2].equalsIgnoreCase("confirm")) { sender.sendMessage("Usage: /clcity deleteplot <id> confirm"); break; }
                     deletePlot(args[1]); sender.sendMessage(msg("Plot deleted: " + args[1]));
                 }
+                case "cleanupplot" -> {
+                    if (args.length < 3 || !args[2].equalsIgnoreCase("confirm")) {
+                        sender.sendMessage(msg("&cThis reruns destructive terrain cleanup using the plot's saved original-ground snapshot."));
+                        sender.sendMessage(msg("Verify the plot and back up the world first. Run &e/clcity cleanupplot " + (args.length >= 2 ? args[1] : "<id>") + " confirm&c."));
+                        break;
+                    }
+                    recoverPlotCleanup(sender, args[1]);
+                }
                 case "setlocation" -> {
                     if (!(sender instanceof Player p) || args.length < 2) { sender.sendMessage("Usage: /clcity setlocation <id>"); break; }
                     validateId(args[1]);
@@ -647,6 +655,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         sender.sendMessage(color("&e/clcity parkbuild <id> <preview|create> &7- Preview/build a public park"));
         sender.sendMessage(color("&e/clcity setprice <id> <price> &7- Change plot price"));
         sender.sendMessage(color("&e/clcity deleteplot <id> confirm &7- Delete an unowned plot"));
+        sender.sendMessage(color("&e/clcity cleanupplot <id> confirm &7- Retry a locked plot's terrain cleanup"));
         sender.sendMessage(color("&e/clcity setspawn &7- Save city spawn"));
         sender.sendMessage(color("&e/clcity setlocation <id> &7- Register a teleport destination"));
         sender.sendMessage(color("&e/clcity removelocation <id> &7- Remove a destination"));
@@ -1649,6 +1658,66 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             player.sendMessage(msg("Could not release plot: " + ex.getMessage()));
             getLogger().warning("Abandon failed for " + id + ": " + ex.getMessage());
         }
+    }
+
+    private void recoverPlotCleanup(CommandSender sender, String id) throws Exception {
+        Plot plot = getPlot(id);
+        if (plot == null) throw new IllegalArgumentException("Plot not found.");
+        if (plot.ownerUuid() != null) throw new IllegalStateException("Owned plots cannot be cleanup-recovered.");
+        if (!isPlotCleanupPending(plot.id())) throw new IllegalStateException("This plot is not marked cleanup-pending.");
+        World world = Bukkit.getWorld(plot.world());
+        if (world == null) throw new IllegalStateException("Plot world is not loaded; cleanup lock remains active.");
+        RegionManager manager = regionManager(world);
+        if (manager == null || manager.getRegion(plotRegionId(plot.id())) == null)
+            throw new IllegalStateException("Plot WorldGuard region is missing; cleanup lock remains active.");
+
+        long expected = (long) (plot.maxX() - plot.minX() + 1) * (plot.maxZ() - plot.minZ() + 1);
+        Map<Long, Integer> terrain = new HashMap<>();
+        try (PreparedStatement ps = db.prepareStatement("SELECT x,z,ground_y FROM plot_terrain WHERE plot_id=?")) {
+            ps.setString(1, plot.id());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    long key = (((long) rs.getInt("x")) << 32) ^ (rs.getInt("z") & 0xffffffffL);
+                    terrain.put(key, rs.getInt("ground_y"));
+                }
+            }
+        }
+        if (terrain.size() != expected)
+            throw new IllegalStateException("Terrain snapshot is incomplete; cleanup lock remains active.");
+
+        int cleared = 0;
+        for (int x = plot.minX(); x <= plot.maxX(); x++) {
+            for (int z = plot.minZ(); z <= plot.maxZ(); z++) {
+                long key = (((long) x) << 32) ^ (z & 0xffffffffL);
+                int ground = terrain.get(key);
+                int top = world.getHighestBlockYAt(x, z);
+                for (int y = top; y > ground; y--) {
+                    Block block = world.getBlockAt(x, y, z);
+                    if (!block.getType().isAir()) {
+                        block.setType(Material.AIR, false);
+                        cleared++;
+                    }
+                }
+            }
+        }
+        for (org.bukkit.entity.Entity entity : world.getEntities()) {
+            Location loc = entity.getLocation();
+            if (loc.getBlockX() >= plot.minX() && loc.getBlockX() <= plot.maxX()
+                    && loc.getBlockZ() >= plot.minZ() && loc.getBlockZ() <= plot.maxZ()
+                    && (entity instanceof org.bukkit.entity.ItemFrame || entity instanceof org.bukkit.entity.Painting)) {
+                entity.remove();
+            }
+        }
+        try (PreparedStatement ps = db.prepareStatement(
+                "UPDATE plots SET cleanup_pending=0 WHERE id=? AND owner_uuid IS NULL AND cleanup_pending=1")) {
+            ps.setString(1, plot.id());
+            if (ps.executeUpdate() != 1) throw new SQLException("Cleanup finished but plot lock could not be cleared.");
+        }
+        mapRenderer.invalidate();
+        try { refreshPlotBoard(plot.id()); }
+        catch (Exception ex) { getLogger().warning("Recovered plot " + id + " but board refresh failed: " + ex.getMessage()); }
+        sender.sendMessage(msg("&aCleanup recovery completed for plot &e" + plot.id() + "&a. Cleared &f" + cleared
+                + "&a blocks. Plot is available for purchase again."));
     }
 
     private void teleportCitySpawn(Player player) {
@@ -2793,13 +2862,13 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         } else if (name.equals("clcity") && sender.hasPermission("clashercity.admin")) {
             if (args.length == 1) {
                 out.addAll(List.of("admin", "help", "phases", "create", "tp", "wand", "createplot", "createroad", "createpublic",
-                        "border", "roadbuild", "parkbuild", "setprice", "deleteplot", "setspawn", "setlocation", "removelocation",
+                        "border", "roadbuild", "parkbuild", "setprice", "deleteplot", "cleanupplot", "setspawn", "setlocation", "removelocation",
                         "mapitem", "mapwall", "undo", "planningcentre", "plotboard", "ceremony", "start", "phase", "end",
                         "closevote", "judge", "score", "winner", "results", "reward", "info", "ghostcorners", "resetplotsroads"));
             } else if (args.length == 2) {
                 switch (sub) {
                     case "phase" -> out.addAll(Arrays.stream(Phase.values()).map(p -> p.name().toLowerCase(Locale.ROOT)).toList());
-                    case "border", "deleteplot", "setprice", "plotboard" -> {
+                    case "border", "deleteplot", "cleanupplot", "setprice", "plotboard" -> {
                         try { for (Plot plot : getPlots()) out.add(plot.id()); } catch (SQLException ignored) { }
                     }
                     case "roadbuild", "parkbuild" -> {
@@ -2816,7 +2885,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
             } else if (args.length == 3) {
                 switch (sub) {
                     case "border", "roadbuild", "parkbuild", "plotboard" -> out.addAll(List.of("preview", "create"));
-                    case "deleteplot", "undo", "resetplotsroads" -> out.add("confirm");
+                    case "deleteplot", "cleanupplot", "undo", "resetplotsroads" -> out.add("confirm");
                     case "judge", "reward" -> Bukkit.getOnlinePlayers().forEach(player -> out.add(player.getName()));
                     case "score" -> out.addAll(scoreCategories().keySet());
                     case "winner" -> {
