@@ -1,4 +1,4 @@
-# ClasherCity 1.1.1 — Clasher Network
+# ClasherCity 1.1.2 — Clasher Network
 
 ClasherCity is a Paper plugin for a separate flat city world, paid building plots, WorldGuard protection, physical/GUI maps, tournament phases, public voting, judge scoring, leaderboard calculation and configurable console-command rewards.
 
@@ -24,7 +24,7 @@ mvn -U clean package
 
 The shaded plugin JAR will be:
 
-`target/ClasherCity-1.1.1.jar`
+`target/ClasherCity-1.1.2.jar`
 
 The SQLite JDBC driver is shaded into this JAR. Paper, WorldGuard, FAWE and Vault APIs are provided by the server and are not bundled.
 
