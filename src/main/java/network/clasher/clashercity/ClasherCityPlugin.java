@@ -2277,7 +2277,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
     private void openVoteConfirm(Player player, String plotId) {
         try {
             Plot plot = getPlot(plotId);
-            if (plot == null || plot.ownerUuid() == null) { player.sendMessage(msg("This entry is unavailable.")); return; }
+            if (plot == null || plot.ownerUuid() == null || !isTournamentEntry(plot.id())) { player.sendMessage(msg("This entry is not registered in the current tournament.")); return; }
             if (plot.ownerUuid().equals(player.getUniqueId().toString())) { player.sendMessage(msg("You cannot vote for your own plot.")); return; }
             if (hasVoted(player)) { player.sendMessage(msg("You have already voted in this tournament.")); return; }
             MenuHolder holder = new MenuHolder("VOTE_CONFIRM", 0);
@@ -2466,7 +2466,7 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         if (owned.isEmpty()) return List.of();
         Map<String, Integer> voteCounts = new HashMap<>();
         int totalVotes = 0;
-        try (PreparedStatement ps = db.prepareStatement("SELECT plot_id,COUNT(*) AS n FROM votes WHERE tournament_id=? GROUP BY plot_id")) {
+        try (PreparedStatement ps = db.prepareStatement("SELECT v.plot_id,COUNT(*) AS n FROM votes v INNER JOIN tournament_entries e ON e.tournament_id=v.tournament_id AND e.plot_id=v.plot_id WHERE v.tournament_id=? GROUP BY v.plot_id")) {
             ps.setString(1, tournamentId());
             try (ResultSet rs = ps.executeQuery()) { while (rs.next()) { voteCounts.put(rs.getString("plot_id"), rs.getInt("n")); totalVotes += rs.getInt("n"); } }
         }
