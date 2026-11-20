@@ -2461,7 +2461,11 @@ public final class ClasherCityPlugin extends JavaPlugin implements Listener, org
         String judgeName;
         if (sender instanceof Player player) {
             judgeId = player.getUniqueId(); judgeName = player.getName();
-            if (!player.hasPermission("clashercity.admin") && !isJudge(judgeId)) { player.sendMessage(msg("You are not registered as a judge.")); return; }
+            if (!player.hasPermission("clashercity.admin")
+                    && (!player.hasPermission("clashercity.judge") || !isJudge(judgeId))) {
+                player.sendMessage(msg("You need the judge permission and an active judge registration to submit scores."));
+                return;
+            }
         } else { sender.sendMessage("Only an online judge or admin player can submit scores."); return; }
         Plot plot = getPlot(args[1]);
         if (plot == null || plot.ownerUuid() == null || !isTournamentEntry(plot.id())) { sender.sendMessage(msg("Owned tournament entry not found.")); return; }
